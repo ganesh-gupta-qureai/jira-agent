@@ -1,0 +1,10 @@
+[project]
+name = "agent"
+version = "0.1.0"
+description = "An agent scaffolded from the Qure agent template."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    # Add what your scripts/ tools need, e.g. psycopg2-binary, httpx, pandas.
+    "python-dotenv>=1.0",
+]

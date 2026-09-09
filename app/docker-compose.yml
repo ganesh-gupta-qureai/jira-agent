@@ -1,0 +1,51 @@
+# Run with:  docker compose up --build
+# Then open  http://localhost:5175
+#
+# `claude` inside the backend container needs credentials. Set
+# CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in a .env next to this
+# file. Don't have a token / no access? Ask the Agentic AI team.
+
+name: agent-app
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "4003:4003"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # OAuth token from `claude setup-token` (uses a Claude subscription).
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      - CLAUDE_WORKSPACE=/workspace
+      # The agent's workspace (system_prompt.md, scripts/, docs/, .env) is the
+      # mounted project root. Scripts read their own config via os.getenv, so add
+      # any tool config (DB creds, API keys) to the `environment:` list below.
+      - SHARED_ROOT=/workspace
+      # --- Add your agent's tool config here (forwarded to scripts) ---
+      # - DB_HOST=${DB_HOST:-}
+      # - DB_PASSWORD=${DB_PASSWORD:-}
+      # --- Langfuse (optional tracing; no-op unless both keys set) ---
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
+    volumes:
+      # Project root: system_prompt.md, scripts/, docs/, .env. Writes land on the host.
+      - ..:/workspace
+      # Per-user Claude config + conversation transcripts. MUST persist so logins
+      # and chat history survive restarts/rebuilds.
+      - agent_user_data:/data/users
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5175:5173"
+    environment:
+      - BACKEND_URL=http://backend:4003
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  agent_user_data:

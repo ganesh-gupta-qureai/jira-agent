@@ -33,14 +33,11 @@ ENV PATH="/root/.local/bin:${PATH}"
 # --- /shared: cwd claude runs from, holds prompt + docs + scripts ---
 WORKDIR /shared
 COPY system_prompt.md ./
-# Only the warehouse schema — the agent should not see internal dev docs, the
-# 0.5MB dataset dumps, or images. Keeps its working context focused and lean.
-COPY docs/warehouse_schema_ce.md ./docs/warehouse_schema_ce.md
+COPY docs/ ./docs/
 COPY scripts/ ./scripts/
-COPY pyproject.toml uv.lock .python-version ./
-# Pre-install the warehouse-query deps (psycopg2-binary, python-dotenv) into
-# /shared/.venv so `uv run scripts/run_query.py` starts instantly.
-RUN uv sync --frozen
+COPY pyproject.toml .python-version ./
+# Pre-install the JIRA tool deps into /shared/.venv so `uv run scripts/*.py` starts instantly.
+RUN uv sync
 
 # --- /app: the FastAPI backend ---
 WORKDIR /app

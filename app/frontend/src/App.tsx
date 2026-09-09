@@ -213,7 +213,7 @@ export default function App() {
 
       <div className="main">
         <header className="topbar">
-          <div className="topbar__title">Agent</div>
+          <div className="topbar__title">JIRA Agent</div>
           <div className="topbar__icons">
             <button className="icon-btn" title="Settings">⚙</button>
             <button className="icon-btn" title="Theme">☀</button>
@@ -311,7 +311,7 @@ export default function App() {
           <span className="statusbar__fact">
             Your agent, running in your workspace.
           </span>
-          <span className="statusbar__ver">Agent v0.1</span>
+          <span className="statusbar__ver">JIRA Agent v0.1</span>
         </footer>
       </div>
 
@@ -326,7 +326,7 @@ function AssistantText({ item }: { item: Extract<TimelineItem, { kind: 'assistan
     <div className="msg msg--agent">
       <div className="msg__avatar">⬢</div>
       <div className="msg__body">
-        <div className="msg__label">Agent</div>
+        <div className="msg__label">JIRA Agent</div>
         <div className="msg__prose">
           <Markdown>{fullText}</Markdown>
           {!item.done && <span className="cursor">▍</span>}

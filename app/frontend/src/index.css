@@ -5,29 +5,30 @@
   --bg-primary: #0a0a0a;
   --bg-secondary: #141414;
   --bg-tertiary: #1e1e1e;
-  --bg-hover: rgba(245, 158, 11, 0.08);
+  --bg-hover: rgba(56, 132, 255, 0.08);
 
   /* Text */
   --text-primary: #e5e5e5;
   --text-secondary: #a0a0a0;
   --text-muted: #666666;
   --text-placeholder: #555555;
-  --text-on-accent: #0a0a0a;
+  --text-on-accent: #ffffff;
 
   /* Borders */
   --border-default: #2a2a2a;
   --border-hover: #3a3a3a;
-  --border-focus: #f59e0b;
+  --border-focus: #388bff;
 
-  /* Accent */
-  --accent: #f59e0b;
-  --accent-hover: #d97706;
-  --accent-muted: rgba(245, 158, 11, 0.12);
-  --accent-subtle: rgba(245, 158, 11, 0.06);
-  --accent-glow: 0 0 15px rgba(245, 158, 11, 0.12);
+  /* Accent — JIRA blue */
+  --accent: #388bff;
+  --accent-hover: #1d6fe0;
+  --accent-muted: rgba(56, 132, 255, 0.12);
+  --accent-subtle: rgba(56, 132, 255, 0.06);
+  --accent-glow: 0 0 15px rgba(56, 132, 255, 0.12);
 
-  /* Semantic */
-  --success: #22c55e;
+  /* Semantic — resolved/done green, JIRA status-pill inspired */
+  --success: #4c9a2a;
+  --success-muted: rgba(76, 154, 42, 0.16);
   --danger: #ef4444;
 
   /* Fonts */

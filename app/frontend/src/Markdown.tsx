@@ -32,11 +32,7 @@ function renderBlocks(src: string): ReactNode[] {
         i++
       }
       i++ // skip closing fence
-      out.push(
-        <pre key={key++} className="md-pre">
-          <code>{body.join('\n')}</code>
-        </pre>,
-      )
+      out.push(<CodeBlock key={key++} lang={fence[1]} code={body.join('\n')} />)
       continue
     }
 
@@ -121,6 +117,53 @@ function renderBlocks(src: string): ReactNode[] {
   }
 
   return out
+}
+
+// Language → file extension, for the generated download's filename. A
+// fenced block with no language tag (bare ``` ... ```, e.g. raw JSON dumps
+// in tool output) gets no download button — only fences the agent actually
+// tagged with a language are treated as "a script."
+const EXT_BY_LANG: Record<string, string> = {
+  python: 'py', py: 'py',
+  bash: 'sh', sh: 'sh', shell: 'sh',
+  javascript: 'js', js: 'js',
+  typescript: 'ts', ts: 'ts',
+  json: 'json',
+  yaml: 'yaml', yml: 'yaml',
+  sql: 'sql',
+}
+
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  const hasLang = lang.trim().length > 0
+  const ext = EXT_BY_LANG[lang.toLowerCase()] ?? 'txt'
+
+  function download() {
+    const blob = new Blob([code], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `script.${ext}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="md-codeblock">
+      {hasLang && (
+        <div className="md-codeblock__head">
+          <span className="md-codeblock__lang">{lang}</span>
+          <button className="md-codeblock__download" onClick={download} title="Download as a file">
+            ↓ Download
+          </button>
+        </div>
+      )}
+      <pre className="md-pre">
+        <code>{code}</code>
+      </pre>
+    </div>
+  )
 }
 
 function heading(level: number, kids: ReactNode, key: number): ReactNode {

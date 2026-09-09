@@ -21,9 +21,10 @@ services:
       # mounted project root. Scripts read their own config via os.getenv, so add
       # any tool config (DB creds, API keys) to the `environment:` list below.
       - SHARED_ROOT=/workspace
-      # --- Add your agent's tool config here (forwarded to scripts) ---
-      # - DB_HOST=${DB_HOST:-}
-      # - DB_PASSWORD=${DB_PASSWORD:-}
+      # --- JIRA tool config (read-only REST client in scripts/) ---
+      - JIRA_BASE_URL=${JIRA_BASE_URL:-}
+      - JIRA_EMAIL=${JIRA_EMAIL:-}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN:-}
       # --- Langfuse (optional tracing; no-op unless both keys set) ---
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}

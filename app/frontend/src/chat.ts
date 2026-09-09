@@ -58,12 +58,15 @@ export function applyEvent(state: ChatState, ev: AGUIEvent): ChatState {
       }
 
     case 'RUN_FINISHED':
-      return { ...state, running: false }
+      // Always finalize any item still mid-stream — if the underlying claude
+      // process died or the connection dropped before its content_block_stop
+      // arrived, this is the only thing that stops its cursor blinking forever.
+      return { ...state, running: false, items: finalizeOpenItems(state.items) }
 
     case 'RUN_ERROR':
       // Keep the message so the UI can show why the turn failed (e.g. an
       // invalid API key) instead of silently dropping it.
-      return { ...state, running: false, error: ev.message }
+      return { ...state, running: false, error: ev.message, items: finalizeOpenItems(state.items) }
 
     case 'RUN_TOKENS':
       return { ...state, tokens: { output: ev.output_tokens, input: ev.input_tokens } }
@@ -154,6 +157,16 @@ export function applyEvent(state: ChatState, ev: AGUIEvent): ChatState {
     default:
       return state
   }
+}
+
+// Force any still-streaming item to `done: true` — used when a run ends
+// (cleanly or not) without a matching END event ever reaching this item.
+function finalizeOpenItems(items: TimelineItem[]): TimelineItem[] {
+  return items.map((it) =>
+    (it.kind === 'assistant_text' || it.kind === 'tool_call') && !it.done
+      ? { ...it, done: true }
+      : it,
+  )
 }
 
 export function pushUser(state: ChatState, text: string): ChatState {

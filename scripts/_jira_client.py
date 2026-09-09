@@ -58,14 +58,43 @@ def _request(method: str, path: str, body: dict | None = None) -> dict:
         raise
 
 
-def search(jql: str, fields: list[str] | None = None, max_results: int = 50) -> dict:
-    """Read-only JQL search. Uses /search/jql — the old /search POST endpoint is 410 Gone."""
+def search(
+    jql: str,
+    fields: list[str] | None = None,
+    max_results: int = 50,
+    page_token: str | None = None,
+) -> dict:
+    """Read-only JQL search. Uses /search/jql — the old /search POST endpoint is 410 Gone.
+
+    A single call returns at most `max_results` issues (the API caps this
+    regardless of how high it's set) plus `isLast`/`nextPageToken` — use
+    `search_all` to walk every page for an exhaustive/aggregate query.
+    """
     body = {
         "jql": jql,
         "maxResults": max_results,
         "fields": fields or ["summary", "status", "assignee", "created", "updated", "priority"],
     }
+    if page_token:
+        body["nextPageToken"] = page_token
     return _request("POST", "/rest/api/3/search/jql", body)
+
+
+def search_all(jql: str, fields: list[str] | None = None, page_size: int = 100) -> list[dict]:
+    """Walk every page of a JQL search and return the combined issue list.
+
+    Use for aggregate/"across all tickets" questions (counts, group-bys) where
+    a single 50-100 result page would silently undercount.
+    """
+    issues: list[dict] = []
+    token: str | None = None
+    while True:
+        resp = search(jql, fields=fields, max_results=page_size, page_token=token)
+        issues.extend(resp.get("issues", []))
+        if resp.get("isLast", True) or not resp.get("nextPageToken"):
+            break
+        token = resp["nextPageToken"]
+    return issues
 
 
 def get_issue(key: str, expand: str | None = None) -> dict:

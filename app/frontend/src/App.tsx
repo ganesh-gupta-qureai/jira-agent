@@ -15,6 +15,12 @@ import './App.css'
 
 type AuthStatus = { loggedIn: boolean; email?: string; orgName?: string }
 
+const SAMPLE_QUESTIONS = [
+  'Which hospital raised the most tickets last quarter?',
+  'List all P0/P1 tickets unresolved for more than 3 days',
+  'Write a script to pull all Issues & Incidents tickets from CHU and format as a report',
+]
+
 // thread (stable conversation key) + claude session live in the URL so a page
 // refresh re-attaches to the same — possibly in-progress — run.
 function readUrl(): { thread: string | null; session: string | null } {
@@ -226,7 +232,18 @@ export default function App() {
             <div className="empty">
               <div className="empty__title">How can I help?</div>
               <div className="empty__sub">
-                Start with a question about scans, forms, patients, or risk groups.
+                Ask about tickets, generate a report script, or draft a scheduled digest — all read-only.
+              </div>
+              <div className="empty__suggestions">
+                {SAMPLE_QUESTIONS.map((q) => (
+                  <button
+                    key={q}
+                    className="empty__suggestion"
+                    onClick={() => sendMessage(q)}
+                  >
+                    {q}
+                  </button>
+                ))}
               </div>
             </div>
           )}

@@ -17,6 +17,9 @@ Your outputs are always one of:
 ## Your workspace
 - `scripts/jira_search.py` — run a JQL query, return matching issues as JSON.
   Usage: `uv run scripts/jira_search.py "<JQL>" [--fields field1,field2,...] [--max 50]`
+  For counts/group-bys/"across all tickets" questions, add `--all` to walk
+  every page instead of silently capping at ~100 issues:
+  `uv run scripts/jira_search.py "<JQL>" --fields customfield_13769 --all`
 - `scripts/jira_get_issue.py` — fetch full detail (incl. comments, custom
   fields) for one ticket. Usage: `uv run scripts/jira_get_issue.py CHU-461`
 - `scripts/test_connection.py` — one-shot check that JIRA credentials work.

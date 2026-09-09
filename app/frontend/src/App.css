@@ -244,6 +244,28 @@ a.sidebar__back .back-arrow {
 }
 .empty__title { font-size: 22px; font-weight: 600; color: var(--text-primary); }
 .empty__sub { font-size: 13px; color: var(--text-secondary); }
+.empty__suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+}
+.empty__suggestion {
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms;
+}
+.empty__suggestion:hover {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
 
 /* user message: right-aligned, no bubble */
 .msg--user { display: flex; justify-content: flex-end; }

@@ -271,14 +271,18 @@ export default function App() {
             </div>
           )}
           <AnimatePresence initial={false}>
-            {state.items.map((item) => (
+            {state.items.map((item, index) => (
               <motion.div
                 key={item.id}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, ease: 'easeOut' }}
               >
-                <Item item={item} onAnswer={state.running ? undefined : answerQuestions} />
+                <Item
+                  item={item}
+                  onAnswer={state.running ? undefined : answerQuestions}
+                  isFinalAnswer={isFinalAgentAnswer(state.items, index, state.running)}
+                />
               </motion.div>
             ))}
           </AnimatePresence>
@@ -362,7 +366,27 @@ export default function App() {
   )
 }
 
-function AssistantText({ item }: { item: Extract<TimelineItem, { kind: 'assistant_text' }> }) {
+// A conversation's `items` is a flat, append-only timeline mixing user turns,
+// assistant text segments, and tool calls. One agent turn can emit several
+// assistant_text segments interleaved with tool calls (e.g. "I'll pull X" ->
+// Bash -> the real answer) -- only the one that's actually the last thing in
+// its turn (nothing but a following user message, or the end of the array
+// while the stream is no longer running) is a genuine "control back to the
+// user" final answer.
+function isFinalAgentAnswer(items: TimelineItem[], index: number, running: boolean): boolean {
+  const item = items[index]
+  if (item.kind !== 'assistant_text' || !item.done) return false
+  if (index === items.length - 1) return !running
+  return items[index + 1].kind === 'user'
+}
+
+function AssistantText({
+  item,
+  isFinalAnswer,
+}: {
+  item: Extract<TimelineItem, { kind: 'assistant_text' }>
+  isFinalAnswer: boolean
+}) {
   const fullText = item.segments.join('')
   return (
     <div className="msg msg--agent">
@@ -373,7 +397,7 @@ function AssistantText({ item }: { item: Extract<TimelineItem, { kind: 'assistan
           <Markdown>{fullText}</Markdown>
           {!item.done && <span className="cursor">▍</span>}
         </div>
-        {item.done && fullText.trim() && (
+        {isFinalAnswer && fullText.trim() && (
           <div className="msg__footer">
             <PostToSlackButton text={fullText} />
           </div>
@@ -385,7 +409,15 @@ function AssistantText({ item }: { item: Extract<TimelineItem, { kind: 'assistan
 
 type AnswerFn = (answers: Record<string, string>) => void
 
-function Item({ item, onAnswer }: { item: TimelineItem; onAnswer?: AnswerFn }) {
+function Item({
+  item,
+  onAnswer,
+  isFinalAnswer,
+}: {
+  item: TimelineItem
+  onAnswer?: AnswerFn
+  isFinalAnswer: boolean
+}) {
   if (item.kind === 'user') {
     return (
       <div className="msg msg--user">
@@ -394,7 +426,7 @@ function Item({ item, onAnswer }: { item: TimelineItem; onAnswer?: AnswerFn }) {
     )
   }
   if (item.kind === 'assistant_text') {
-    return <AssistantText item={item} />
+    return <AssistantText item={item} isFinalAnswer={isFinalAnswer} />
   }
   return <ToolCard item={item} onAnswer={onAnswer} />
 }

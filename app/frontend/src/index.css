@@ -47,3 +47,30 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Themed scrollbars everywhere -- thin, rounded, dark-matched -- instead of
+   the default OS scrollbar (light gray track/thumb) clashing with the dark
+   UI on every scrollable pane (chat, code blocks, Scripts log rows, etc.). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border-hover);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

@@ -5,17 +5,10 @@ import { apiUrl, bounceIfUnauthorized } from './api'
 // just a generated script. Reuses the exact same /api/execute-script path a
 // Mode 2 script's own Execute button uses (script_runner.py's uv-run +
 // auto-post-on-success pipeline) -- it just builds the trivial script itself
-// instead of showing one. base64 avoids any quoting/escaping issue with the
-// answer text (backticks, quotes, triple-quotes) ending up inside Python source.
-function toBase64Utf8(str: string): string {
-  const bytes = new TextEncoder().encode(str)
-  let binary = ''
-  bytes.forEach((b) => {
-    binary += String.fromCharCode(b)
-  })
-  return btoa(binary)
-}
-
+// instead of showing one. JSON.stringify produces a valid Python double-quoted
+// string literal too (both share \", \\, \n, \r, \t, \uXXXX escaping), so the
+// Scripts log shows real, readable Python -- not a base64 blob -- while still
+// being immune to quote/backtick/triple-quote characters in the answer text.
 type PostResult = {
   ok: boolean
   timed_out: boolean
@@ -47,7 +40,7 @@ export function PostToSlackButton({ text }: { text: string }) {
     setStatus('posting')
     setMessage(null)
     try {
-      const code = `import base64\nprint(base64.b64decode("${toBase64Utf8(text)}").decode("utf-8"))\n`
+      const code = `print(${JSON.stringify(text)})\n`
       const res = await fetch(apiUrl('/api/execute-script'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

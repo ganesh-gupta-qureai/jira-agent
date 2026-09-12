@@ -852,6 +852,12 @@ a.sidebar__back .back-arrow {
   background: var(--bg-secondary);
   border-radius: 10px;
   overflow: hidden;
+  /* Without this, overflow:hidden demotes this flex item's automatic
+     minimum height to 0 (a CSS default), so flexbox shrinks/clips an
+     expanded row to fit .history's box instead of growing .history taller
+     and letting its own overflow-y: auto scroll to it -- confirmed live:
+     couldn't scroll to see a whole expanded script + output. */
+  flex-shrink: 0;
 }
 .history__head {
   width: 100%;

@@ -24,10 +24,79 @@ import urllib.request
 
 SLACK_MESSAGE_MAX_CHARS = 3_000
 _ASCII_HEADER_RE = re.compile(r'^(?:=|-){2,}\s*(.+?)\s*(?:=|-){2,}$', re.MULTILINE)
+# Keep in sync with app/backend/script_runner.py's identical set -- two
+# copies because this runs in the workspace's `uv run` env, that one in the
+# backend's, not because the logic is meant to diverge.
+_MD_HEADING_RE = re.compile(r'^#{1,6}\s+(.+)$', re.MULTILINE)
+_MD_BOLD_RE = re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__')
+_MD_LINK_RE = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
+_TABLE_ROW_RE = re.compile(r'^\s*\|(.+)\|\s*$')
+_TABLE_SEP_CELL_RE = re.compile(r'^:?-{2,}:?$')
+_SECOND_PERSON_RE = re.compile(r"\byour?\b", re.IGNORECASE)
+
+
+def _parse_table_row(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip('|').split('|')]
+
+
+def _is_table_separator_row(cells: list[str]) -> bool:
+    return bool(cells) and all(_TABLE_SEP_CELL_RE.match(c) for c in cells if c)
+
+
+def _render_table_block(rows: list[list[str]]) -> str:
+    ncols = max(len(r) for r in rows)
+    rows = [r + [""] * (ncols - len(r)) for r in rows]
+    widths = [max(len(r[c]) for r in rows) for c in range(ncols)]
+    header, *body_rows = rows
+    lines = ["  ".join(cell.ljust(widths[c]) for c, cell in enumerate(header)).rstrip()]
+    lines.append("  ".join("-" * widths[c] for c in range(ncols)))
+    for row in body_rows:
+        lines.append("  ".join(cell.ljust(widths[c]) for c, cell in enumerate(row)).rstrip())
+    return "```\n" + "\n".join(lines) + "\n```"
+
+
+def _convert_tables(text: str) -> str:
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _TABLE_ROW_RE.match(line) and i + 1 < len(lines) and _TABLE_ROW_RE.match(lines[i + 1]):
+            if _is_table_separator_row(_parse_table_row(lines[i + 1])):
+                rows = [_parse_table_row(line)]
+                j = i + 2
+                while j < len(lines) and _TABLE_ROW_RE.match(lines[j]):
+                    rows.append(_parse_table_row(lines[j]))
+                    j += 1
+                out.append(_render_table_block(rows))
+                i = j
+                continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)
+
+
+def _strip_chatty_tail(body: str) -> str:
+    tail_start = max(0, len(body) - 400)
+    m = _SECOND_PERSON_RE.search(body, tail_start)
+    if not m:
+        return body
+    idx = m.start()
+    cutoff = -1
+    for sep in (". ", ".\n", "! ", "!\n", "? ", "?\n", "\n\n"):
+        pos = body.rfind(sep, 0, idx)
+        if pos != -1:
+            cutoff = max(cutoff, pos + 1)
+    return body[:cutoff].rstrip() if cutoff > 0 else body
 
 
 def _to_slack_mrkdwn(body: str) -> str:
-    return _ASCII_HEADER_RE.sub(lambda m: f"*{m.group(1)}*", body)
+    body = _strip_chatty_tail(body)
+    body = _ASCII_HEADER_RE.sub(lambda m: f"*{m.group(1)}*", body)
+    body = _MD_HEADING_RE.sub(lambda m: f"*{m.group(1)}*", body)
+    body = _MD_BOLD_RE.sub(lambda m: f"*{m.group(1) or m.group(2)}*", body)
+    body = _MD_LINK_RE.sub(lambda m: f"<{m.group(2)}|{m.group(1)}>", body)
+    return _convert_tables(body)
 
 
 def post(text: str) -> None:

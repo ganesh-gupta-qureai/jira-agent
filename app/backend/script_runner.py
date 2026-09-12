@@ -34,16 +34,98 @@ SLACK_MESSAGE_MAX_CHARS = 3_000
 # Matches a plain-text report's ASCII section divider, e.g.
 # "=== CHU: Issues & Incidents Report ===" or "--- By Status ---".
 _ASCII_HEADER_RE = re.compile(r'^(?:=|-){2,}\s*(.+?)\s*(?:=|-){2,}$', re.MULTILINE)
+# The Post to Slack button posts an agent chat answer verbatim -- that's
+# CommonMark (the syntax app/frontend/src/Markdown.tsx renders), not the
+# plain-text convention chu_weekly_report.py-style scripts print. Slack's
+# mrkdwn is close but not the same dialect (single `*bold*`, no tables, no
+# `[text](url)` links), so this converts the subset the agent actually emits.
+_MD_HEADING_RE = re.compile(r'^#{1,6}\s+(.+)$', re.MULTILINE)
+_MD_BOLD_RE = re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__')
+_MD_LINK_RE = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
+_TABLE_ROW_RE = re.compile(r'^\s*\|(.+)\|\s*$')
+_TABLE_SEP_CELL_RE = re.compile(r'^:?-{2,}:?$')
+# A direct-address aside ("let me know", "you gave me", "if you want...")
+# reads fine as a reply to whoever asked, but not as a standalone report
+# posted to a whole channel. A standalone JIRA report has essentially no
+# legitimate reason to say "you"/"your" -- so the first such word within the
+# last 400 chars marks the start of a conversational tail, trimmed back to
+# the nearest sentence boundary. Only trims within that trailing window, and
+# only when an earlier boundary actually exists, so a message that's
+# ENTIRELY this kind of aside is never emptied out.
+_SECOND_PERSON_RE = re.compile(r"\byour?\b", re.IGNORECASE)
+
+
+def _parse_table_row(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip('|').split('|')]
+
+
+def _is_table_separator_row(cells: list[str]) -> bool:
+    return bool(cells) and all(_TABLE_SEP_CELL_RE.match(c) for c in cells if c)
+
+
+def _render_table_block(rows: list[list[str]]) -> str:
+    """A markdown pipe table has no Slack equivalent -- render it as a
+    column-aligned Slack code block instead of leaving literal `|`/`-`
+    characters in the message."""
+    ncols = max(len(r) for r in rows)
+    rows = [r + [""] * (ncols - len(r)) for r in rows]
+    widths = [max(len(r[c]) for r in rows) for c in range(ncols)]
+    header, *body_rows = rows
+    lines = ["  ".join(cell.ljust(widths[c]) for c, cell in enumerate(header)).rstrip()]
+    lines.append("  ".join("-" * widths[c] for c in range(ncols)))
+    for row in body_rows:
+        lines.append("  ".join(cell.ljust(widths[c]) for c, cell in enumerate(row)).rstrip())
+    return "```\n" + "\n".join(lines) + "\n```"
+
+
+def _convert_tables(text: str) -> str:
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _TABLE_ROW_RE.match(line) and i + 1 < len(lines) and _TABLE_ROW_RE.match(lines[i + 1]):
+            if _is_table_separator_row(_parse_table_row(lines[i + 1])):
+                rows = [_parse_table_row(line)]
+                j = i + 2
+                while j < len(lines) and _TABLE_ROW_RE.match(lines[j]):
+                    rows.append(_parse_table_row(lines[j]))
+                    j += 1
+                out.append(_render_table_block(rows))
+                i = j
+                continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)
+
+
+def _strip_chatty_tail(body: str) -> str:
+    tail_start = max(0, len(body) - 400)
+    m = _SECOND_PERSON_RE.search(body, tail_start)
+    if not m:
+        return body
+    idx = m.start()
+    cutoff = -1
+    for sep in (". ", ".\n", "! ", "!\n", "? ", "?\n", "\n\n"):
+        pos = body.rfind(sep, 0, idx)
+        if pos != -1:
+            cutoff = max(cutoff, pos + 1)
+    return body[:cutoff].rstrip() if cutoff > 0 else body
 
 
 def _to_slack_mrkdwn(body: str) -> str:
-    """Turn a plain-text report's ASCII section dividers into Slack bold
-    headers. Deliberately does NOT try to fabricate hyperlinked counts the
-    way scripts/chu_weekly_report.py's own hand-built Slack formatting does
-    -- that requires the script itself to compute JQL search links; this
-    only reformats what's already there. Slack already renders a leading
-    "- " as a native bullet, so those lines need no change."""
-    return _ASCII_HEADER_RE.sub(lambda m: f"*{m.group(1)}*", body)
+    """Turn a plain-text report's ASCII section dividers AND the agent's own
+    CommonMark (headings, **bold**, [links](url), pipe tables) into Slack
+    mrkdwn, and drop a trailing chatbot-style aside so a posted chat answer
+    reads like a standalone report. Table conversion must run LAST -- its
+    generated `-------` separator row would otherwise itself match the
+    ASCII-header pattern above and get mangled."""
+    body = _strip_chatty_tail(body)
+    body = _ASCII_HEADER_RE.sub(lambda m: f"*{m.group(1)}*", body)
+    body = _MD_HEADING_RE.sub(lambda m: f"*{m.group(1)}*", body)
+    body = _MD_BOLD_RE.sub(lambda m: f"*{m.group(1) or m.group(2)}*", body)
+    body = _MD_LINK_RE.sub(lambda m: f"<{m.group(2)}|{m.group(1)}>", body)
+    return _convert_tables(body)
 
 
 def _post_to_slack(stdout: str) -> str | None:

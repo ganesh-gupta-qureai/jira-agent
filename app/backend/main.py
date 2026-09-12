@@ -32,6 +32,7 @@ from claude_runner import run_claude
 from conversations import get_conversation, list_conversations
 from langfuse_emit import emit_turn
 from runlog import get_runlog
+from script_runner import execute_script
 
 
 class _TurnTrace:
@@ -119,6 +120,12 @@ class AnswerRequest(BaseModel):
 
 class LoginComplete(BaseModel):
     session_id: str
+    code: str
+
+
+class ExecuteScriptRequest(BaseModel):
+    # The exact script text shown in chat -- the human has already read it and
+    # is choosing to run it now via the Execute button.
     code: str
 
 
@@ -247,6 +254,15 @@ async def events(
     session_id when reopening a conversation so its transcript seeds the log."""
     log = _log(user, thread_id, session_id)
     return sse_response(log, resume_point(request))
+
+
+@router.post("/api/execute-script")
+async def execute_script_route(req: ExecuteScriptRequest, user: str = Depends(current_user)) -> dict:
+    """Human-triggered only (the UI's Execute button under a generated script)
+    -- the agent itself never calls this; see script_runner.py."""
+    if not req.code.strip():
+        raise HTTPException(status_code=400, detail="no script content")
+    return await execute_script(user, req.code)
 
 
 @router.get("/api/conversations")

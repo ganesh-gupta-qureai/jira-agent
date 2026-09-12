@@ -1,4 +1,5 @@
-import { type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { apiUrl, bounceIfUnauthorized } from './api'
 
 // Minimal, dependency-free markdown renderer for assistant chat output.
 // Handles the subset the agent actually emits: headings, fenced code blocks,
@@ -133,9 +134,29 @@ const EXT_BY_LANG: Record<string, string> = {
   sql: 'sql',
 }
 
+type ExecuteResult = {
+  ok: boolean
+  timed_out: boolean
+  exit_code: number | null
+  stdout: string
+  stderr: string
+}
+
+// Only a real Python block is a "script" the human might want to run in
+// place -- other fenced languages (bash snippets, raw JSON dumps, SQL) still
+// get the Download button but never Execute, since this backend only knows
+// how to `uv run` a .py file (see script_runner.py).
+const EXECUTABLE_LANGS = new Set(['python', 'py'])
+
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const hasLang = lang.trim().length > 0
-  const ext = EXT_BY_LANG[lang.toLowerCase()] ?? 'txt'
+  const langLower = lang.toLowerCase()
+  const ext = EXT_BY_LANG[langLower] ?? 'txt'
+  const executable = EXECUTABLE_LANGS.has(langLower)
+
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<ExecuteResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   function download() {
     const blob = new Blob([code], { type: 'text/plain' })
@@ -149,19 +170,76 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
     URL.revokeObjectURL(url)
   }
 
+  async function execute() {
+    if (running) return
+    setRunning(true)
+    setError(null)
+    setResult(null)
+    try {
+      const res = await fetch(apiUrl('/api/execute-script'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      if (bounceIfUnauthorized(res)) return
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        throw new Error(typeof body?.detail === 'string' ? body.detail : `execute failed: ${res.status}`)
+      }
+      setResult(await res.json())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Execute failed')
+    } finally {
+      setRunning(false)
+    }
+  }
+
   return (
     <div className="md-codeblock">
       {hasLang && (
         <div className="md-codeblock__head">
           <span className="md-codeblock__lang">{lang}</span>
-          <button className="md-codeblock__download" onClick={download} title="Download as a file">
-            ↓ Download
-          </button>
+          <div className="md-codeblock__actions">
+            {executable && (
+              <button
+                className="md-codeblock__execute"
+                onClick={execute}
+                disabled={running}
+                title="Run this script now, in this workspace"
+              >
+                {running ? '⏳ Running…' : '▶ Execute'}
+              </button>
+            )}
+            <button className="md-codeblock__download" onClick={download} title="Download as a file">
+              ↓ Download
+            </button>
+          </div>
         </div>
       )}
       <pre className="md-pre">
         <code>{code}</code>
       </pre>
+      {error && <div className="md-codeblock__result md-codeblock__result--error">{error}</div>}
+      {result && (
+        <div
+          className={`md-codeblock__result ${
+            result.timed_out || !result.ok ? 'md-codeblock__result--error' : 'md-codeblock__result--ok'
+          }`}
+        >
+          <div className="md-codeblock__result-head">
+            {result.timed_out
+              ? 'Timed out'
+              : result.ok
+                ? `Exit 0`
+                : `Exit ${result.exit_code ?? '?'}`}
+          </div>
+          {result.stdout && <pre className="md-pre">{result.stdout}</pre>}
+          {result.stderr && <pre className="md-pre">{result.stderr}</pre>}
+          {!result.stdout && !result.stderr && !result.timed_out && (
+            <div className="md-codeblock__result-empty">(no output)</div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

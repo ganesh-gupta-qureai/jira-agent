@@ -25,6 +25,9 @@ services:
       - JIRA_BASE_URL=${JIRA_BASE_URL:-}
       - JIRA_EMAIL=${JIRA_EMAIL:-}
       - JIRA_API_TOKEN=${JIRA_API_TOKEN:-}
+      # --- Slack (only used by generated/executed scripts that post reports) ---
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - CHU_SLACK_CHANNEL_ID=${CHU_SLACK_CHANNEL_ID:-C055ZJ1JTV1}
       # --- Langfuse (optional tracing; no-op unless both keys set) ---
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}

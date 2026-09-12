@@ -134,12 +134,61 @@ const EXT_BY_LANG: Record<string, string> = {
   sql: 'sql',
 }
 
+// --- Python syntax highlighting --------------------------------------------
+// Same dependency-free approach as renderInline below: a single ordered
+// matcher (comments/strings first so their contents aren't re-tokenized,
+// then decorators, numbers, then bare words checked against fixed keyword/
+// constant sets) instead of pulling in a highlighting library.
+const PY_KEYWORDS = new Set([
+  'def', 'class', 'import', 'from', 'as', 'return', 'if', 'elif', 'else',
+  'for', 'while', 'try', 'except', 'finally', 'with', 'lambda', 'yield',
+  'pass', 'break', 'continue', 'global', 'nonlocal', 'assert', 'raise',
+  'del', 'in', 'is', 'not', 'and', 'or', 'async', 'await', 'match', 'case',
+])
+const PY_CONSTANTS = new Set(['None', 'True', 'False', 'self', 'cls'])
+
+const PY_TOKEN_RE =
+  /(#[^\n]*)|('''[\s\S]*?'''|"""[\s\S]*?"""|(?:[rbfuRBFU]{1,2})?'(?:[^'\\\n]|\\.)*'|(?:[rbfuRBFU]{1,2})?"(?:[^"\\\n]|\\.)*")|(@[A-Za-z_][\w.]*)|(\b\d+\.?\d*(?:[eE][+-]?\d+)?\b)|(\b[A-Za-z_]\w*\b)/
+
+function highlightPython(code: string): ReactNode[] {
+  const nodes: ReactNode[] = []
+  let key = 0
+  let rest = code
+
+  while (rest.length) {
+    const m = rest.match(PY_TOKEN_RE)
+    if (!m || m.index === undefined) {
+      nodes.push(rest)
+      break
+    }
+    if (m.index > 0) nodes.push(rest.slice(0, m.index))
+
+    const tok = m[0]
+    const [, comment, str, decorator, number, word] = m
+    if (comment) nodes.push(<span key={key++} className="py-comment">{comment}</span>)
+    else if (str) nodes.push(<span key={key++} className="py-string">{str}</span>)
+    else if (decorator) nodes.push(<span key={key++} className="py-decorator">{decorator}</span>)
+    else if (number) nodes.push(<span key={key++} className="py-number">{number}</span>)
+    else if (word) {
+      if (PY_KEYWORDS.has(word)) nodes.push(<span key={key++} className="py-keyword">{word}</span>)
+      else if (PY_CONSTANTS.has(word)) nodes.push(<span key={key++} className="py-constant">{word}</span>)
+      else nodes.push(word)
+    }
+
+    rest = rest.slice(m.index + tok.length)
+  }
+
+  return nodes
+}
+
 type ExecuteResult = {
   ok: boolean
   timed_out: boolean
   exit_code: number | null
   stdout: string
   stderr: string
+  posted_to_slack: boolean
+  slack_error: string | null
 }
 
 // Only a real Python block is a "script" the human might want to run in
@@ -217,7 +266,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
         </div>
       )}
       <pre className="md-pre">
-        <code>{code}</code>
+        <code>{executable ? highlightPython(code) : code}</code>
       </pre>
       {error && <div className="md-codeblock__result md-codeblock__result--error">{error}</div>}
       {result && (
@@ -237,6 +286,11 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
           {result.stderr && <pre className="md-pre">{result.stderr}</pre>}
           {!result.stdout && !result.stderr && !result.timed_out && (
             <div className="md-codeblock__result-empty">(no output)</div>
+          )}
+          {result.ok && (
+            <div className="md-codeblock__slack-status">
+              {result.posted_to_slack ? '✓ Posted to Slack' : `⚠ Not posted to Slack: ${result.slack_error}`}
+            </div>
           )}
         </div>
       )}

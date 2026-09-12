@@ -727,6 +727,7 @@ a.sidebar__back .back-arrow {
 .md-codeblock__result--error .md-codeblock__result-head { color: #ef4444; }
 .md-codeblock__result--error.md-codeblock__result { color: #ef4444; padding: 6px 14px; font-size: 12.5px; }
 .md-codeblock__result-empty { padding: 0 14px 10px; font-size: 12px; color: var(--text-muted); }
+.md-codeblock__slack-status { padding: 0 14px 10px; font-size: 12px; color: var(--text-secondary); }
 .md-pre {
   background: #08080a;
   margin: 0;
@@ -740,6 +741,13 @@ a.sidebar__back .back-arrow {
   font-family: inherit;
   white-space: pre;
 }
+/* Python syntax colors -- see Markdown.tsx's highlightPython */
+.py-keyword { color: #c678dd; }
+.py-string { color: #98c379; }
+.py-comment { color: #7f848e; font-style: italic; }
+.py-number { color: #d19a66; }
+.py-decorator { color: #61afef; }
+.py-constant { color: #56b6c2; }
 .md-code {
   font-family: var(--font-mono);
   font-size: 0.92em;

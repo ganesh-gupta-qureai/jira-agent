@@ -6,6 +6,14 @@ rules come from an already-running instance of this exact report (the "CHU
 Jira Report Bot" posting to `#complaint-handling-us`) -- follow them rather
 than inventing a different report shape.
 
+## Opening line
+
+The Execute button's auto-post-to-Slack no longer adds its own label -- a
+script's stdout is posted to Slack exactly as printed. Open with one plain,
+friendly greeting sentence (e.g. "Hey everyone, here are the last 10 Issues
+& Incidents tickets from the Complaint Handling US Jira board"), not a
+mechanical `=== Title ===` header.
+
 ## Scope and freshness
 
 - Always a fresh Jira API pull. Never reuse a saved/cached count.

@@ -150,7 +150,7 @@ const PY_CONSTANTS = new Set(['None', 'True', 'False', 'self', 'cls'])
 const PY_TOKEN_RE =
   /(#[^\n]*)|('''[\s\S]*?'''|"""[\s\S]*?"""|(?:[rbfuRBFU]{1,2})?'(?:[^'\\\n]|\\.)*'|(?:[rbfuRBFU]{1,2})?"(?:[^"\\\n]|\\.)*")|(@[A-Za-z_][\w.]*)|(\b\d+\.?\d*(?:[eE][+-]?\d+)?\b)|(\b[A-Za-z_]\w*\b)/
 
-function highlightPython(code: string): ReactNode[] {
+export function highlightPython(code: string): ReactNode[] {
   const nodes: ReactNode[] = []
   let key = 0
   let rest = code

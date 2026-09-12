@@ -30,6 +30,7 @@ from agui_sync import drive_turn, resume_point, sse_response
 from auth import complete_login, get_status, start_login
 from claude_runner import run_claude
 from conversations import get_conversation, list_conversations
+from execution_history import clear_executions, delete_execution, list_executions
 from langfuse_emit import emit_turn
 from runlog import get_runlog
 from script_runner import execute_script
@@ -263,6 +264,25 @@ async def execute_script_route(req: ExecuteScriptRequest, user: str = Depends(cu
     if not req.code.strip():
         raise HTTPException(status_code=400, detail="no script content")
     return await execute_script(user, req.code)
+
+
+@router.get("/api/executions")
+async def executions(user: str = Depends(current_user)) -> list[dict]:
+    """The History tab's list -- every script run via Execute, newest first."""
+    return list_executions(user)
+
+
+@router.delete("/api/executions/{exec_id}")
+async def delete_execution_route(exec_id: str, user: str = Depends(current_user)) -> dict:
+    if not delete_execution(user, exec_id):
+        raise HTTPException(status_code=404, detail="execution not found")
+    return {"ok": True}
+
+
+@router.delete("/api/executions")
+async def clear_executions_route(user: str = Depends(current_user)) -> dict:
+    deleted = clear_executions(user)
+    return {"ok": True, "deleted": deleted}
 
 
 @router.get("/api/conversations")

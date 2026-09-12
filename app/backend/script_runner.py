@@ -22,6 +22,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from execution_history import record_execution
 from users import user_workspace
 
 EXECUTE_TIMEOUT_S = 90
@@ -59,10 +60,13 @@ def _post_to_slack(stdout: str) -> str | None:
     truncated = len(body) > SLACK_MESSAGE_MAX_CHARS
     if truncated:
         body = body[:SLACK_MESSAGE_MAX_CHARS] + "\n... (truncated, see full output in the chat)"
-    # No code fence -- a fenced block renders as a flat monospace dump with
-    # none of Slack's own mrkdwn (bold, bullets) applied inside it. Plain
-    # mrkdwn text reads like a real report instead.
-    text = "*Executed script result:*\n" + _to_slack_mrkdwn(body)
+    # No code fence, no added "Executed script result:" label -- a fenced
+    # block renders as a flat monospace dump with none of Slack's own mrkdwn
+    # (bold, bullets) applied inside it, and a mechanical label reads like a
+    # bot notification instead of a real report. Post exactly what the
+    # script printed (see system_prompt.md's instruction that a script
+    # meant for Slack should open with its own natural greeting line).
+    text = _to_slack_mrkdwn(body)
 
     payload = json.dumps({"channel": channel, "text": text, "mrkdwn": True}).encode("utf-8")
     request = urllib.request.Request(
@@ -117,7 +121,7 @@ async def execute_script(user_id: str, code: str) -> dict:
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
-            return {
+            result = {
                 "ok": False,
                 "timed_out": True,
                 "exit_code": None,
@@ -126,12 +130,14 @@ async def execute_script(user_id: str, code: str) -> dict:
                 "posted_to_slack": False,
                 "slack_error": None,
             }
+            record_execution(user_id, code, result)
+            return result
         ok = proc.returncode == 0
         stdout_text = stdout.decode("utf-8", errors="replace")[:OUTPUT_MAX_BYTES]
         # Only a genuinely successful run gets broadcast -- a failed script's
         # traceback goes to the human in the chat UI, not to the shared channel.
         slack_error = _post_to_slack(stdout_text) if ok else None
-        return {
+        result = {
             "ok": ok,
             "timed_out": False,
             "exit_code": proc.returncode,
@@ -140,6 +146,8 @@ async def execute_script(user_id: str, code: str) -> dict:
             "posted_to_slack": ok and slack_error is None,
             "slack_error": slack_error,
         }
+        record_execution(user_id, code, result)
+        return result
     finally:
         try:
             script_path.unlink()

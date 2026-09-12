@@ -6,6 +6,8 @@ import { subscribeAGUI } from './agui_sync'
 import type { AGUIEvent } from './agui_sync'
 import { applyEvent, initialChatState, type TimelineItem } from './chat'
 import { fetchConversations } from './conversationsApi'
+import ExecutionHistory from './ExecutionHistory'
+import { formatAgo } from './formatAgo'
 import Honeycomb from './Honeycomb'
 import LoadingDots from './LoadingDots'
 import Login from './Login'
@@ -14,6 +16,7 @@ import { renderToolBody } from './tools/registry'
 import './App.css'
 
 type AuthStatus = { loggedIn: boolean; email?: string; orgName?: string }
+type View = 'chat' | 'history'
 
 const SAMPLE_QUESTIONS = [
   'Which hospital raised the most tickets last quarter?',
@@ -39,6 +42,7 @@ function writeUrl(thread: string | null, session: string | null) {
 export default function App() {
   const [threadId, setThreadId] = useState<string | null>(() => readUrl().thread)
   const [sessionId, setSessionId] = useState<string | null>(() => readUrl().session)
+  const [view, setView] = useState<View>('chat')
   const [state, setState] = useState(initialChatState)
   const [draft, setDraft] = useState('')
   const [auth, setAuth] = useState<AuthStatus | null>(null)
@@ -220,6 +224,20 @@ export default function App() {
       <div className="main">
         <header className="topbar">
           <div className="topbar__title">JIRA Agent</div>
+          <nav className="topbar__tabs">
+            <button
+              className={`topbar__tab ${view === 'chat' ? 'topbar__tab--active' : ''}`}
+              onClick={() => setView('chat')}
+            >
+              Chat
+            </button>
+            <button
+              className={`topbar__tab ${view === 'history' ? 'topbar__tab--active' : ''}`}
+              onClick={() => setView('history')}
+            >
+              History
+            </button>
+          </nav>
           <div className="topbar__icons">
             <button className="icon-btn" title="Settings">⚙</button>
             <button className="icon-btn" title="Theme">☀</button>
@@ -227,6 +245,10 @@ export default function App() {
           </div>
         </header>
 
+        {view === 'history' ? (
+          <ExecutionHistory />
+        ) : (
+          <>
         <div className="chat" ref={scrollRef}>
           {state.items.length === 0 && !state.running && (
             <div className="empty">
@@ -321,6 +343,8 @@ export default function App() {
             </button>
           </div>
         </form>
+          </>
+        )}
 
         <footer className="statusbar">
           <span className="statusbar__dot" />
@@ -421,10 +445,3 @@ function hasLiveAssistantText(items: TimelineItem[]): boolean {
   return items.some((i) => i.kind === 'assistant_text' && i.segments.length > 0)
 }
 
-function formatAgo(ts: number): string {
-  const s = Math.floor((Date.now() - ts) / 1000)
-  if (s < 60) return 'just now'
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
-  return `${Math.floor(s / 86400)}d ago`
-}

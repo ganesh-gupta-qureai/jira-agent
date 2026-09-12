@@ -36,6 +36,16 @@ async def execute_script(user_id: str, code: str) -> dict:
 
     env = dict(os.environ)
     env.pop("VIRTUAL_ENV", None)  # use the workspace venv, not the backend's own
+    # Every script modeled on scripts/jira_search.py's own documented pattern
+    # does `sys.path.insert(0, str(Path(__file__).resolve().parent))` to
+    # import _jira_client -- that only adds the SCRIPT's own directory, which
+    # is generated_dir here, not scripts/ where _jira_client.py actually lives
+    # (confirmed live: ModuleNotFoundError: No module named '_jira_client').
+    # PYTHONPATH is added to sys.path by the interpreter at startup, before
+    # the script's own sys.path.insert runs, so this works regardless of what
+    # the generated script's own import trick does.
+    scripts_dir = str(ws / "scripts")
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [scripts_dir, env.get("PYTHONPATH")]))
 
     try:
         proc = await asyncio.create_subprocess_exec(

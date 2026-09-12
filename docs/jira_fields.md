@@ -31,3 +31,10 @@ Use these field IDs when building JQL or requesting specific `fields` from
 - Product/hospital tickets aren't always on the same field: check both
   `customfield_13683` and `customfield_10332` for product, since different
   tickets populate different ones.
+- **A `{value: ...}`-shaped custom field can come back as a bare list
+  instead** (`[{value: ...}, ...]`) for at least some CHU tickets -- confirmed
+  live: a generated report script's naive `isinstance(field, dict)` check
+  passed the raw list through unchanged, and `Counter(...)`-ing it crashed
+  with `TypeError: unhashable type: 'list'`. Any script that groups/counts by
+  one of these fields should handle a list value explicitly (e.g. join
+  multiple values, or take the first) instead of assuming dict-or-scalar.

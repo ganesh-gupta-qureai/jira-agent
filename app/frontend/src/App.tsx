@@ -12,6 +12,7 @@ import Honeycomb from './Honeycomb'
 import LoadingDots from './LoadingDots'
 import Login from './Login'
 import { Markdown } from './Markdown'
+import { PostToSlackButton } from './PostToSlack'
 import { renderToolBody } from './tools/registry'
 import './App.css'
 
@@ -372,6 +373,11 @@ function AssistantText({ item }: { item: Extract<TimelineItem, { kind: 'assistan
           <Markdown>{fullText}</Markdown>
           {!item.done && <span className="cursor">▍</span>}
         </div>
+        {item.done && fullText.trim() && (
+          <div className="msg__footer">
+            <PostToSlackButton text={fullText} />
+          </div>
+        )}
       </div>
     </div>
   )

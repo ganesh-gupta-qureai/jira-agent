@@ -5,3 +5,12 @@ export function formatAgo(ts: number): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   return `${Math.floor(s / 86400)}d ago`
 }
+
+// The browser's own locale/timezone -- "local" as in the viewer's clock, not
+// a fixed server timezone.
+export function formatLocalDateTime(ts: number): string {
+  return new Date(ts).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+}

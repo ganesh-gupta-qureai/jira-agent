@@ -8,7 +8,7 @@ import {
   type ExecutionRecord,
 } from './executionsApi'
 import { highlightPython } from './Markdown'
-import { formatAgo } from './formatAgo'
+import { formatAgo, formatLocalDateTime } from './formatAgo'
 
 function statusOf(rec: ExecutionRecord): { label: string; className: string } {
   if (rec.timed_out) return { label: 'Timed out', className: 'history__status--error' }
@@ -57,7 +57,9 @@ function HistoryRow({ rec, onDeleted }: { rec: ExecutionRecord; onDeleted: (id: 
     <div className="history__row">
       <button type="button" className="history__head" onClick={() => setOpen((o) => !o)}>
         <span className={`history__status ${status.className}`}>{status.label}</span>
-        <span className="history__when">{formatAgo(rec.timestamp * 1000)}</span>
+        <span className="history__when" title={formatAgo(rec.timestamp * 1000)}>
+          {formatLocalDateTime(rec.timestamp * 1000)}
+        </span>
         <span className="history__slack">
           {rec.ok ? (rec.posted_to_slack ? '✓ Slack' : '⚠ Slack') : ''}
         </span>

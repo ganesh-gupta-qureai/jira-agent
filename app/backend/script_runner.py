@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -28,6 +29,20 @@ OUTPUT_MAX_BYTES = 64 * 1024
 # Slack's own message-length limits make a 64KB dump unreadable anyway --
 # capped separately and much shorter for what actually gets posted.
 SLACK_MESSAGE_MAX_CHARS = 3_000
+
+# Matches a plain-text report's ASCII section divider, e.g.
+# "=== CHU: Issues & Incidents Report ===" or "--- By Status ---".
+_ASCII_HEADER_RE = re.compile(r'^(?:=|-){2,}\s*(.+?)\s*(?:=|-){2,}$', re.MULTILINE)
+
+
+def _to_slack_mrkdwn(body: str) -> str:
+    """Turn a plain-text report's ASCII section dividers into Slack bold
+    headers. Deliberately does NOT try to fabricate hyperlinked counts the
+    way scripts/chu_weekly_report.py's own hand-built Slack formatting does
+    -- that requires the script itself to compute JQL search links; this
+    only reformats what's already there. Slack already renders a leading
+    "- " as a native bullet, so those lines need no change."""
+    return _ASCII_HEADER_RE.sub(lambda m: f"*{m.group(1)}*", body)
 
 
 def _post_to_slack(stdout: str) -> str | None:
@@ -44,7 +59,10 @@ def _post_to_slack(stdout: str) -> str | None:
     truncated = len(body) > SLACK_MESSAGE_MAX_CHARS
     if truncated:
         body = body[:SLACK_MESSAGE_MAX_CHARS] + "\n... (truncated, see full output in the chat)"
-    text = f"*Executed script result:*\n```\n{body}\n```"
+    # No code fence -- a fenced block renders as a flat monospace dump with
+    # none of Slack's own mrkdwn (bold, bullets) applied inside it. Plain
+    # mrkdwn text reads like a real report instead.
+    text = "*Executed script result:*\n" + _to_slack_mrkdwn(body)
 
     payload = json.dumps({"channel": channel, "text": text, "mrkdwn": True}).encode("utf-8")
     request = urllib.request.Request(

@@ -225,8 +225,15 @@ a.sidebar__back .back-arrow {
 .icon-btn:hover { background: var(--bg-hover); color: var(--accent); }
 
 /* ---------- chat surface ---------- */
+/* overflow-x: hidden here is load-bearing, not decorative -- a wide
+   .md-pre/.md-codeblock inside a message (long pipe-delimited script
+   output, wide tables) will force this flex column's cross size wider than
+   the viewport unless it's clipped here, which then leaks out as a
+   whole-PAGE horizontal scrollbar (confirmed live) instead of a scrollbar
+   local to the wide element itself. Same fix as us-sre-agent's .chat. */
 .chat {
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 28px 22% 18px;
   display: flex;
   flex-direction: column;
@@ -302,6 +309,11 @@ a.sidebar__back .back-arrow {
 .msg__body {
   border-left: 2px solid var(--accent);
   padding: 2px 0 2px 14px;
+  /* This is the 1fr grid track in .msg--agent -- without min-width: 0 a
+     grid/flex item won't shrink below its content's intrinsic width, so a
+     wide code block inside would stretch this column (and .chat above it)
+     rather than being clipped/scrolled locally. */
+  min-width: 0;
 }
 .msg__label {
   font-size: 10.5px;
@@ -666,6 +678,16 @@ a.sidebar__back .back-arrow {
   padding: 7px 10px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-default);
+}
+/* Execute/Download live here now, below the code, not above it -- the head
+   above is just the language tag. */
+.md-codeblock__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 7px 10px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-default);
 }
 .md-codeblock__lang {
   font-family: var(--font-mono);

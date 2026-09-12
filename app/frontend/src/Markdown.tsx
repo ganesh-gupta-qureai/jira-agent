@@ -248,6 +248,13 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       {hasLang && (
         <div className="md-codeblock__head">
           <span className="md-codeblock__lang">{lang}</span>
+        </div>
+      )}
+      <pre className="md-pre">
+        <code>{executable ? highlightPython(code) : code}</code>
+      </pre>
+      {hasLang && (
+        <div className="md-codeblock__foot">
           <div className="md-codeblock__actions">
             {executable && (
               <button
@@ -265,9 +272,6 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
           </div>
         </div>
       )}
-      <pre className="md-pre">
-        <code>{executable ? highlightPython(code) : code}</code>
-      </pre>
       {error && <div className="md-codeblock__result md-codeblock__result--error">{error}</div>}
       {result && (
         <div

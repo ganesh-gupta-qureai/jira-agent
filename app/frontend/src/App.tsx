@@ -193,6 +193,20 @@ export default function App() {
         <div className="sidebar__section">
           <div className="sidebar__label">Recent chats</div>
           <input className="sidebar__search" placeholder="Search…" />
+          <nav className="sidebar__tabs">
+            <button
+              className={`sidebar__tab ${view === 'chat' ? 'sidebar__tab--active' : ''}`}
+              onClick={() => setView('chat')}
+            >
+              Chat
+            </button>
+            <button
+              className={`sidebar__tab ${view === 'history' ? 'sidebar__tab--active' : ''}`}
+              onClick={() => setView('history')}
+            >
+              Scripts log
+            </button>
+          </nav>
         </div>
 
         <nav className="sidebar__list">
@@ -224,20 +238,6 @@ export default function App() {
       <div className="main">
         <header className="topbar">
           <div className="topbar__title">JIRA Agent</div>
-          <nav className="topbar__tabs">
-            <button
-              className={`topbar__tab ${view === 'chat' ? 'topbar__tab--active' : ''}`}
-              onClick={() => setView('chat')}
-            >
-              Chat
-            </button>
-            <button
-              className={`topbar__tab ${view === 'history' ? 'topbar__tab--active' : ''}`}
-              onClick={() => setView('history')}
-            >
-              History
-            </button>
-          </nav>
           <div className="topbar__icons">
             <button className="icon-btn" title="Settings">⚙</button>
             <button className="icon-btn" title="Theme">☀</button>

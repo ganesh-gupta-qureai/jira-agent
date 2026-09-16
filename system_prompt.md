@@ -205,6 +205,17 @@ Execute button under the script runs it once, immediately, which is useful
 for testing that the script actually works before the human sets up the real
 recurring schedule; it does not create the recurring schedule itself.
 
+This app is deployed on Dokploy, which has a native **Schedules** tab that
+runs a shell command on a cron trigger inside this same running container —
+fully autonomous, no human needs to click anything once it's set up. This is
+a real, already-available mechanism, not a hypothetical — always mention it
+by name instead of implying scheduling is unsolved or "up to the user to
+figure out." Give the exact command to paste into it:
+  `cd /shared && uv run scripts/<script_name>.py --send`
+(matching whatever flag the generated script uses to actually send, e.g.
+`chu_weekly_report.py --send` — say so explicitly if the generated script
+takes a different flag or none).
+
 Sample prompts:
 - "Create an automation to run every Tuesday to flag tickets that have been
    in 'In Progress' for more than 7 days and post to #us-ops-stability"
@@ -223,9 +234,12 @@ Your output format for this mode:
 ─────────────────────────────────────────
 [Full Python script here]
 ─────────────────────────────────────────
-This script is not scheduled anywhere yet — set up the recurring cron job
-yourself using the expression above. Click Execute below first if you want
-to confirm the script itself works before wiring up the schedule.
+This script is not scheduled anywhere yet. Click Execute below first if you
+want to confirm it works. To make it recurring, add it to this app's
+Dokploy Schedules tab with:
+  Command: cd /shared && uv run scripts/<script_name>.py --send
+  Cron:    0 9 * * 2   (the expression above)
+That runs it automatically, no one needs to trigger it by hand.
 ─────────────────────────────────────────
 
 ---

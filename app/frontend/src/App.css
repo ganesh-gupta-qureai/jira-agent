@@ -2,6 +2,16 @@
 .shell {
   display: grid;
   grid-template-columns: 280px 1fr;
+  /* minmax(0, 1fr), not a bare 1fr -- a bare 1fr still respects the row's
+     automatic minimum size (its content's natural height), so a long code
+     block in .chat could still grow this row past 100vh. minmax(0, ...)
+     lets it shrink below that, which is what actually forces .main to stay
+     capped at the viewport and makes .chat's own overflow-y:auto the real
+     (and only) scroll mechanism -- without this, .main's content pushes
+     past 100vh and overflow:hidden below just clips it, taking the
+     composer/statusbar with it. Confirmed live: this is the actual root
+     cause of "the composer/lower half gets chopped off". */
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   position: relative;
   overflow: hidden;

@@ -6,6 +6,8 @@ export type CronJob = {
   name: string
   code: string
   cron_expr: string
+  start_date: string | null // ISO date (YYYY-MM-DD)
+  end_date: string | null // ISO date (YYYY-MM-DD)
   created_at: number // unix seconds (float)
   enabled: boolean
   last_run_at: number | null
@@ -26,11 +28,17 @@ export async function fetchCronJobs(): Promise<CronJob[]> {
   return res.json()
 }
 
-export async function createCronJob(name: string, code: string, cron_expr: string): Promise<CronJob> {
+export async function createCronJob(
+  name: string,
+  code: string,
+  cron_expr: string,
+  start_date: string | null,
+  end_date: string | null,
+): Promise<CronJob> {
   const res = await fetch(apiUrl('/api/cron-jobs'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, code, cron_expr }),
+    body: JSON.stringify({ name, code, cron_expr, start_date, end_date }),
   })
   await throwIfBad(res)
   return res.json()

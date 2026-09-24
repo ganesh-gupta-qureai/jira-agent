@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { apiUrl, bounceIfUnauthorized } from './api'
 import { createCronJob } from './cronJobsApi'
+import { ScheduleForm, type ScheduleValues } from './ScheduleForm'
 
 // Minimal, dependency-free markdown renderer for assistant chat output.
 // Handles the subset the agent actually emits: headings, fenced code blocks,
@@ -209,8 +210,6 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const [error, setError] = useState<string | null>(null)
 
   const [schedOpen, setSchedOpen] = useState(false)
-  const [schedName, setSchedName] = useState('')
-  const [schedCron, setSchedCron] = useState('0 9 * * 1')
   const [schedBusy, setSchedBusy] = useState(false)
   const [schedError, setSchedError] = useState<string | null>(null)
   const [schedDone, setSchedDone] = useState(false)
@@ -251,12 +250,12 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
     }
   }
 
-  async function submitSchedule() {
-    if (schedBusy || !schedName.trim() || !schedCron.trim()) return
+  async function submitSchedule(values: ScheduleValues) {
+    if (schedBusy) return
     setSchedBusy(true)
     setSchedError(null)
     try {
-      await createCronJob(schedName.trim(), code, schedCron.trim())
+      await createCronJob(values.name, code, values.cronExpr, values.startDate, values.endDate)
       setSchedDone(true)
       setSchedOpen(false)
     } catch (err) {
@@ -306,37 +305,12 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
         </div>
       )}
       {schedOpen && (
-        <div className="md-codeblock__schedule-form">
-          <input
-            className="md-codeblock__schedule-input"
-            placeholder="Name this schedule, e.g. Weekly CHU report"
-            value={schedName}
-            onChange={(e) => setSchedName(e.target.value)}
-          />
-          <input
-            className="md-codeblock__schedule-input md-codeblock__schedule-input--cron"
-            placeholder="Cron expression"
-            value={schedCron}
-            onChange={(e) => setSchedCron(e.target.value)}
-          />
-          <div className="md-codeblock__schedule-hint">
-            5-field crontab: minute hour day-of-month month day-of-week — e.g.{' '}
-            <code className="md-code">0 9 * * 1</code> = every Monday at 9:00.
-          </div>
-          <div className="md-codeblock__schedule-actions">
-            <button
-              className="md-codeblock__execute"
-              onClick={submitSchedule}
-              disabled={schedBusy || !schedName.trim() || !schedCron.trim()}
-            >
-              {schedBusy ? 'Creating…' : 'Create schedule'}
-            </button>
-            <button className="md-codeblock__download" onClick={() => setSchedOpen(false)}>
-              Cancel
-            </button>
-          </div>
-          {schedError && <div className="md-codeblock__result md-codeblock__result--error">{schedError}</div>}
-        </div>
+        <ScheduleForm
+          onSubmit={submitSchedule}
+          onCancel={() => setSchedOpen(false)}
+          busy={schedBusy}
+          error={schedError}
+        />
       )}
       {error && <div className="md-codeblock__result md-codeblock__result--error">{error}</div>}
       {result && (

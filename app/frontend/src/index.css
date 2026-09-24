@@ -37,7 +37,14 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
+/* overflow: hidden here is load-bearing, not decorative -- without it, any
+   sub-pixel/box-model overshoot in .shell's content (new chat messages
+   streaming in, a code block, the schedule form) makes BODY the scrollable
+   element instead of the intended inner panes (.chat, .sidebar__list). That
+   scrolls the whole page including the composer near the bottom of .main,
+   which then visibly leaves the viewport on every new message -- confirmed
+   live. All scrolling must stay contained inside .shell's own children. */
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 body {
   background: var(--bg-primary);
   color: var(--text-primary);

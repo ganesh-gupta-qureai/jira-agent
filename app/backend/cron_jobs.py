@@ -49,12 +49,21 @@ def get_job(user_id: str, job_id: str) -> dict | None:
     return None
 
 
-def create_job(user_id: str, name: str, code: str, cron_expr: str) -> dict:
+def create_job(
+    user_id: str,
+    name: str,
+    code: str,
+    cron_expr: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
     job = {
         "id": uuid.uuid4().hex,
         "name": name,
         "code": code,
         "cron_expr": cron_expr,
+        "start_date": start_date,  # ISO date (YYYY-MM-DD) or None -- runs start firing immediately
+        "end_date": end_date,      # ISO date (YYYY-MM-DD) or None -- runs indefinitely
         "created_at": time.time(),
         "enabled": True,
         "last_run_at": None,

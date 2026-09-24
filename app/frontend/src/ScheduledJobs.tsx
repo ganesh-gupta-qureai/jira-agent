@@ -65,6 +65,14 @@ function JobRow({ job, onChanged }: { job: CronJob; onChanged: (job: CronJob | n
         <div className="history__body">
           <div className="history__label">cron expression</div>
           <pre className="md-pre">{job.cron_expr}</pre>
+          {(job.start_date || job.end_date) && (
+            <>
+              <div className="history__label">date range</div>
+              <pre className="md-pre">
+                {job.start_date ?? 'starts immediately'} → {job.end_date ?? 'no end date'}
+              </pre>
+            </>
+          )}
           <div className="history__label">created</div>
           <pre className="md-pre">{formatLocalDateTime(job.created_at * 1000)}</pre>
           <div className="history__label">script</div>

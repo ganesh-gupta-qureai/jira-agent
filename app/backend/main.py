@@ -145,6 +145,8 @@ class CreateCronJobRequest(BaseModel):
     name: str
     code: str
     cron_expr: str
+    start_date: str | None = None  # ISO date (YYYY-MM-DD); None = start immediately
+    end_date: str | None = None    # ISO date (YYYY-MM-DD); None = no end
 
 
 class SetCronJobEnabledRequest(BaseModel):
@@ -318,7 +320,11 @@ async def create_cron_job_route(req: CreateCronJobRequest, user: str = Depends(c
     error = cron_scheduler.validate_cron(req.cron_expr)
     if error:
         raise HTTPException(status_code=400, detail=f"invalid cron expression: {error}")
-    job = cron_jobs.create_job(user, req.name.strip(), req.code, req.cron_expr.strip())
+    if req.start_date and req.end_date and req.end_date < req.start_date:
+        raise HTTPException(status_code=400, detail="end date can't be before start date")
+    job = cron_jobs.create_job(
+        user, req.name.strip(), req.code, req.cron_expr.strip(), req.start_date, req.end_date
+    )
     cron_scheduler.schedule_job(user, job)
     return job
 

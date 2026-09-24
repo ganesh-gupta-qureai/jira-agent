@@ -53,6 +53,24 @@ def validate_cron(cron_expr: str) -> str | None:
     return None
 
 
+def _build_trigger(job: dict) -> CronTrigger:
+    """Build the actual trigger from a job's stored fields. Split the
+    5-field crontab string into CronTrigger's own minute/hour/day/month/
+    day_of_week kwargs (same field syntax, so this is a direct pass-through)
+    instead of using from_crontab(), which has no start_date/end_date
+    parameters -- those only exist on the full constructor."""
+    minute, hour, day, month, day_of_week = job["cron_expr"].split()
+    kwargs: dict = dict(minute=minute, hour=hour, day=day, month=month, day_of_week=day_of_week)
+    if job.get("start_date"):
+        kwargs["start_date"] = job["start_date"]
+    if job.get("end_date"):
+        # A date-only end_date means "through the end of that day" to a user,
+        # not "at 00:00 on that day" (which would make the job never fire on
+        # its own end date) -- push to the last instant of that day.
+        kwargs["end_date"] = f"{job['end_date']} 23:59:59"
+    return CronTrigger(**kwargs)
+
+
 def schedule_job(user_id: str, job: dict) -> None:
     """(Re)register one job with the live scheduler -- called on create and
     once per persisted job at startup. An invalid cron expression here (only
@@ -65,9 +83,9 @@ def schedule_job(user_id: str, job: dict) -> None:
     if not job.get("enabled", True):
         return
     try:
-        trigger = CronTrigger.from_crontab(job["cron_expr"])
-    except ValueError:
-        logger.error("invalid cron expression %r for job %s", job["cron_expr"], job["id"])
+        trigger = _build_trigger(job)
+    except (ValueError, KeyError):
+        logger.error("invalid schedule fields for job %s: %r", job["id"], job)
         return
     scheduler.add_job(
         _run_job,

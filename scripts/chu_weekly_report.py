@@ -43,7 +43,13 @@ from _jira_client import JiraConfigError, search_all  # noqa: E402
 CATEGORY_FIELD = "customfield_13817"
 FIRST_RESPONSE_SLA_FIELD = "customfield_10087"
 RESOLUTION_SLA_FIELD = "customfield_10086"
-CATEGORIES = ("Feedback", "Issue/Complaint", "Incident/Alerts")
+# Confirmed live against the field's own editmeta.allowedValues (2026-09-24):
+# exactly these two options today, ids 16659/16660. An older external
+# reference for this project described a 3-way Feedback/Issue-Complaint/
+# Incident-Alerts split -- that's stale; the field was reconfigured to this
+# 2-way split at some point after that reference was last updated. Using the
+# old 3-way names here would silently bucket 0 tickets into every category.
+CATEGORIES = ("Issues & Incidents", "Product Feedback")
 
 # Reporters this report never assigns/tags -- system/integration accounts, not people.
 _UNTAGGABLE_REPORTERS = {"Qpartner_integration"}

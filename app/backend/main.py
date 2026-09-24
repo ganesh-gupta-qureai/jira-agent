@@ -30,6 +30,8 @@ from agui_sync import drive_turn, resume_point, sse_response
 from auth import complete_login, get_status, start_login
 from claude_runner import run_claude
 from conversations import get_conversation, list_conversations
+import cron_jobs
+import cron_scheduler
 from execution_history import clear_executions, delete_execution, list_executions
 from langfuse_emit import emit_turn
 from runlog import get_runlog
@@ -103,6 +105,13 @@ app.add_middleware(
 router = APIRouter()
 
 
+@app.on_event("startup")
+async def _start_cron_scheduler() -> None:
+    """Re-register every persisted cron job (across all users) so schedules
+    survive a redeploy/restart, then start firing them. See cron_scheduler.py."""
+    cron_scheduler.start()
+
+
 class ChatRequest(BaseModel):
     message: str
     # Stable conversation key the client owns (a fresh uuid for a new chat, or an
@@ -128,6 +137,18 @@ class ExecuteScriptRequest(BaseModel):
     # The exact script text shown in chat -- the human has already read it and
     # is choosing to run it now via the Execute button.
     code: str
+
+
+class CreateCronJobRequest(BaseModel):
+    # Same trust boundary as ExecuteScriptRequest.code -- the human has
+    # already read this exact script in chat and is choosing to schedule it.
+    name: str
+    code: str
+    cron_expr: str
+
+
+class SetCronJobEnabledRequest(BaseModel):
+    enabled: bool
 
 
 @router.get("/api/health")
@@ -283,6 +304,48 @@ async def delete_execution_route(exec_id: str, user: str = Depends(current_user)
 async def clear_executions_route(user: str = Depends(current_user)) -> dict:
     deleted = clear_executions(user)
     return {"ok": True, "deleted": deleted}
+
+
+@router.post("/api/cron-jobs")
+async def create_cron_job_route(req: CreateCronJobRequest, user: str = Depends(current_user)) -> dict:
+    """Human-triggered only, same as /api/execute-script -- the agent never
+    calls this. Rejects a bad cron expression up front instead of silently
+    creating a job that would never fire."""
+    if not req.code.strip():
+        raise HTTPException(status_code=400, detail="no script content")
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="job needs a name")
+    error = cron_scheduler.validate_cron(req.cron_expr)
+    if error:
+        raise HTTPException(status_code=400, detail=f"invalid cron expression: {error}")
+    job = cron_jobs.create_job(user, req.name.strip(), req.code, req.cron_expr.strip())
+    cron_scheduler.schedule_job(user, job)
+    return job
+
+
+@router.get("/api/cron-jobs")
+async def cron_jobs_route(user: str = Depends(current_user)) -> list[dict]:
+    """The Scheduled tab's list -- every job the user has created, newest first."""
+    return cron_jobs.list_jobs(user)
+
+
+@router.patch("/api/cron-jobs/{job_id}")
+async def set_cron_job_enabled_route(
+    job_id: str, req: SetCronJobEnabledRequest, user: str = Depends(current_user)
+) -> dict:
+    job = cron_jobs.set_enabled(user, job_id, req.enabled)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    cron_scheduler.schedule_job(user, job)  # re-registers if enabled, unschedules if not
+    return job
+
+
+@router.delete("/api/cron-jobs/{job_id}")
+async def delete_cron_job_route(job_id: str, user: str = Depends(current_user)) -> dict:
+    if not cron_jobs.delete_job(user, job_id):
+        raise HTTPException(status_code=404, detail="job not found")
+    cron_scheduler.unschedule_job(user, job_id)
+    return {"ok": True}
 
 
 @router.get("/api/conversations")

@@ -28,8 +28,14 @@ mechanical `=== Title ===` header.
 - Tickets 7-30 days old / older than 30 days (age buckets).
 - Current active first-response and resolution SLA breach counts.
 - Unassigned active ticket count.
-- Category split: `Feedback` / `Issue/Complaint` / `Incident/Alerts` (no
-  people tags in this section -- plain counts/list only).
+- Category split: `Issues & Incidents` / `Product Feedback` (no people tags
+  in this section -- plain counts/list only). Confirmed live against the
+  field's own editmeta.allowedValues (2026-09-24) -- these are the only two
+  options that currently exist. An older external reference for this report
+  described a 3-way `Feedback`/`Issue/Complaint`/`Incident/Alerts` split;
+  that's stale (the field was reconfigured at some point after that
+  reference was written) and using those names buckets 0 tickets into every
+  category.
 - Person-wise follow-ups go in **thread replies**, not the parent message.
 
 ## SLA breach rules (important, easy to get wrong)

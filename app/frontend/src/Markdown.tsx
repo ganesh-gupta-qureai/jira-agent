@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { apiUrl, bounceIfUnauthorized } from './api'
+import { createCronJob } from './cronJobsApi'
 
 // Minimal, dependency-free markdown renderer for assistant chat output.
 // Handles the subset the agent actually emits: headings, fenced code blocks,
@@ -207,6 +208,13 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const [result, setResult] = useState<ExecuteResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const [schedOpen, setSchedOpen] = useState(false)
+  const [schedName, setSchedName] = useState('')
+  const [schedCron, setSchedCron] = useState('0 9 * * 1')
+  const [schedBusy, setSchedBusy] = useState(false)
+  const [schedError, setSchedError] = useState<string | null>(null)
+  const [schedDone, setSchedDone] = useState(false)
+
   function download() {
     const blob = new Blob([code], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -243,6 +251,21 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
     }
   }
 
+  async function submitSchedule() {
+    if (schedBusy || !schedName.trim() || !schedCron.trim()) return
+    setSchedBusy(true)
+    setSchedError(null)
+    try {
+      await createCronJob(schedName.trim(), code, schedCron.trim())
+      setSchedDone(true)
+      setSchedOpen(false)
+    } catch (err) {
+      setSchedError(err instanceof Error ? err.message : 'Could not create schedule')
+    } finally {
+      setSchedBusy(false)
+    }
+  }
+
   return (
     <div className="md-codeblock">
       {hasLang && (
@@ -269,7 +292,50 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
             <button className="md-codeblock__download" onClick={download} title="Download as a file">
               ↓ Download
             </button>
+            {executable && !schedDone && (
+              <button
+                className="md-codeblock__download"
+                onClick={() => setSchedOpen((o) => !o)}
+                title="Run this script automatically on a recurring schedule"
+              >
+                ⏰ Schedule
+              </button>
+            )}
+            {schedDone && <span className="md-codeblock__scheduled">✓ Scheduled</span>}
           </div>
+        </div>
+      )}
+      {schedOpen && (
+        <div className="md-codeblock__schedule-form">
+          <input
+            className="md-codeblock__schedule-input"
+            placeholder="Name this schedule, e.g. Weekly CHU report"
+            value={schedName}
+            onChange={(e) => setSchedName(e.target.value)}
+          />
+          <input
+            className="md-codeblock__schedule-input md-codeblock__schedule-input--cron"
+            placeholder="Cron expression"
+            value={schedCron}
+            onChange={(e) => setSchedCron(e.target.value)}
+          />
+          <div className="md-codeblock__schedule-hint">
+            5-field crontab: minute hour day-of-month month day-of-week — e.g.{' '}
+            <code className="md-code">0 9 * * 1</code> = every Monday at 9:00.
+          </div>
+          <div className="md-codeblock__schedule-actions">
+            <button
+              className="md-codeblock__execute"
+              onClick={submitSchedule}
+              disabled={schedBusy || !schedName.trim() || !schedCron.trim()}
+            >
+              {schedBusy ? 'Creating…' : 'Create schedule'}
+            </button>
+            <button className="md-codeblock__download" onClick={() => setSchedOpen(false)}>
+              Cancel
+            </button>
+          </div>
+          {schedError && <div className="md-codeblock__result md-codeblock__result--error">{schedError}</div>}
         </div>
       )}
       {error && <div className="md-codeblock__result md-codeblock__result--error">{error}</div>}

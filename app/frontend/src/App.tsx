@@ -13,11 +13,12 @@ import LoadingDots from './LoadingDots'
 import Login from './Login'
 import { Markdown } from './Markdown'
 import { PostToSlackButton } from './PostToSlack'
+import ScheduledJobs from './ScheduledJobs'
 import { renderToolBody } from './tools/registry'
 import './App.css'
 
 type AuthStatus = { loggedIn: boolean; email?: string; orgName?: string }
-type View = 'chat' | 'history'
+type View = 'chat' | 'history' | 'schedules'
 
 const SAMPLE_QUESTIONS = [
   'Which hospital raised the most tickets last quarter?',
@@ -207,6 +208,12 @@ export default function App() {
             >
               Scripts log
             </button>
+            <button
+              className={`sidebar__tab ${view === 'schedules' ? 'sidebar__tab--active' : ''}`}
+              onClick={() => setView('schedules')}
+            >
+              Scheduled
+            </button>
           </nav>
         </div>
 
@@ -248,6 +255,8 @@ export default function App() {
 
         {view === 'history' ? (
           <ExecutionHistory />
+        ) : view === 'schedules' ? (
+          <ScheduledJobs />
         ) : (
           <>
         <div className="chat" ref={scrollRef}>

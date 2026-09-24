@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { apiUrl, bounceIfUnauthorized } from './api'
 import { createCronJob } from './cronJobsApi'
 import { ScheduleForm, type ScheduleValues } from './ScheduleForm'
+import { DEFAULT_SLACK_CHANNEL, SLACK_CHANNELS } from './slackChannels'
 
 // Minimal, dependency-free markdown renderer for assistant chat output.
 // Handles the subset the agent actually emits: headings, fenced code blocks,
@@ -214,6 +215,10 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const [schedError, setSchedError] = useState<string | null>(null)
   const [schedDone, setSchedDone] = useState(false)
 
+  // Shared by Execute and Schedule -- both post through the same channel
+  // override (see script_runner.execute_script's `channel` param).
+  const [channel, setChannel] = useState<string>(DEFAULT_SLACK_CHANNEL)
+
   function download() {
     const blob = new Blob([code], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -235,7 +240,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       const res = await fetch(apiUrl('/api/execute-script'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, channel }),
       })
       if (bounceIfUnauthorized(res)) return
       if (!res.ok) {
@@ -255,7 +260,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
     setSchedBusy(true)
     setSchedError(null)
     try {
-      await createCronJob(values.name, code, values.cronExpr, values.startDate, values.endDate)
+      await createCronJob(values.name, code, values.cronExpr, values.startDate, values.endDate, channel)
       setSchedDone(true)
       setSchedOpen(false)
     } catch (err) {
@@ -301,6 +306,20 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
               </button>
             )}
             {schedDone && <span className="md-codeblock__scheduled">✓ Scheduled</span>}
+            {executable && (
+              <select
+                className="md-codeblock__channel"
+                value={channel}
+                onChange={(e) => setChannel(e.target.value)}
+                title="Slack channel Execute/Schedule will post to"
+              >
+                {SLACK_CHANNELS.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
       )}

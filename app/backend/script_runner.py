@@ -128,13 +128,15 @@ def _to_slack_mrkdwn(body: str) -> str:
     return _convert_tables(body)
 
 
-def _post_to_slack(stdout: str) -> str | None:
-    """Post a successful run's output to the configured CHU Slack channel.
-    Returns an error string on failure, None on success -- never raises, so a
-    Slack-posting problem never hides the fact that the script itself ran
-    fine (the caller still reports ok/exit_code/stdout independent of this)."""
+def _post_to_slack(stdout: str, channel: str | None = None) -> str | None:
+    """Post a successful run's output to a Slack channel -- `channel` if
+    given (a human-chosen override from the UI's channel picker), else the
+    CHU_SLACK_CHANNEL_ID env default. Returns an error string on failure,
+    None on success -- never raises, so a Slack-posting problem never hides
+    the fact that the script itself ran fine (the caller still reports
+    ok/exit_code/stdout independent of this)."""
     token = os.environ.get("SLACK_BOT_TOKEN", "")
-    channel = os.environ.get("CHU_SLACK_CHANNEL_ID", "")
+    channel = channel or os.environ.get("CHU_SLACK_CHANNEL_ID", "")
     if not token or not channel:
         return "SLACK_BOT_TOKEN or CHU_SLACK_CHANNEL_ID is not set -- see app/.env.example"
 
@@ -167,10 +169,18 @@ def _post_to_slack(stdout: str) -> str | None:
     return None
 
 
-async def execute_script(user_id: str, code: str) -> dict:
+async def execute_script(user_id: str, code: str, channel: str | None = None) -> dict:
     """Write `code` to a throwaway file in the user's own workspace (so it
     sees the same scripts/.env/docs symlinks a `uv run scripts/...` call
-    would) and run it via `uv run`, same as a human would from a terminal."""
+    would) and run it via `uv run`, same as a human would from a terminal.
+
+    `channel` (a Slack channel ID from the UI's channel picker) overrides
+    CHU_SLACK_CHANNEL_ID for BOTH this function's own auto-post-on-success
+    AND the subprocess's own env -- a generated script like
+    chu_weekly_report.py reads that same env var as its own --channel
+    default, so overriding it here keeps the script's own internal Slack
+    calls and this function's auto-post targeting the same channel instead
+    of silently posting to two different ones."""
     ws = user_workspace(user_id)
     generated_dir = ws / "generated"
     generated_dir.mkdir(exist_ok=True)
@@ -179,6 +189,8 @@ async def execute_script(user_id: str, code: str) -> dict:
 
     env = dict(os.environ)
     env.pop("VIRTUAL_ENV", None)  # use the workspace venv, not the backend's own
+    if channel:
+        env["CHU_SLACK_CHANNEL_ID"] = channel
     # Every script modeled on scripts/jira_search.py's own documented pattern
     # does `sys.path.insert(0, str(Path(__file__).resolve().parent))` to
     # import _jira_client -- that only adds the SCRIPT's own directory, which
@@ -218,7 +230,7 @@ async def execute_script(user_id: str, code: str) -> dict:
         stdout_text = stdout.decode("utf-8", errors="replace")[:OUTPUT_MAX_BYTES]
         # Only a genuinely successful run gets broadcast -- a failed script's
         # traceback goes to the human in the chat UI, not to the shared channel.
-        slack_error = _post_to_slack(stdout_text) if ok else None
+        slack_error = _post_to_slack(stdout_text, channel) if ok else None
         result = {
             "ok": ok,
             "timed_out": False,

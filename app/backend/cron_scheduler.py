@@ -35,7 +35,7 @@ async def _run_job(user_id: str, job_id: str) -> None:
     if job is None or not job.get("enabled", True):
         return
     try:
-        result = await execute_script(user_id, job["code"])
+        result = await execute_script(user_id, job["code"], job.get("channel"))
         cron_jobs.record_run(user_id, job_id, ok=bool(result.get("ok")))
     except Exception:
         logger.exception("cron job %s (user %s) failed", job_id, user_id)

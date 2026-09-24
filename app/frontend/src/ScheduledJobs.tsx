@@ -8,6 +8,11 @@ import {
 } from './cronJobsApi'
 import { highlightPython } from './Markdown'
 import { formatAgo, formatLocalDateTime } from './formatAgo'
+import { SLACK_CHANNELS } from './slackChannels'
+
+function channelLabel(id: string | null): string {
+  return SLACK_CHANNELS.find((c) => c.id === id)?.label ?? id ?? 'default (CHU_SLACK_CHANNEL_ID)'
+}
 
 function lastRunLabel(job: CronJob): { label: string; className: string } {
   if (job.last_run_at === null) return { label: 'Never run yet', className: '' }
@@ -65,6 +70,8 @@ function JobRow({ job, onChanged }: { job: CronJob; onChanged: (job: CronJob | n
         <div className="history__body">
           <div className="history__label">cron expression</div>
           <pre className="md-pre">{job.cron_expr}</pre>
+          <div className="history__label">channel</div>
+          <pre className="md-pre">{channelLabel(job.channel)}</pre>
           {(job.start_date || job.end_date) && (
             <>
               <div className="history__label">date range</div>

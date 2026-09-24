@@ -737,7 +737,19 @@ a.sidebar__back .back-arrow {
   border-color: var(--accent);
   background: var(--accent-subtle);
 }
-.md-codeblock__actions { display: flex; align-items: center; gap: 6px; }
+.md-codeblock__actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.md-codeblock__channel {
+  margin-left: auto;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.md-codeblock__channel:hover { border-color: var(--accent); }
 .md-codeblock__execute {
   display: flex;
   align-items: center;

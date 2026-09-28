@@ -94,30 +94,52 @@ def main() -> None:
         sys.exit(1)
     print(f"Found {len(slack_members)} real (non-bot) Slack workspace members.\n")
 
-    # Exact display-name / real-name match only -- no fuzzy matching, so
-    # every suggestion here is either right or correctly absent, never a
-    # confident-looking wrong guess.
+    # Two passes, both deterministic (no edit-distance/fuzzy matching that
+    # could produce a confident-looking wrong guess):
+    #   1. Exact string match.
+    #   2. Normalized match -- lowercase, and "." or "_" treated as a space,
+    #      so a Jira dotted-username style ("Sai.Vinayak") can still match a
+    #      Slack real name written as "Sai Vinayak". Every normalized match
+    #      is labeled as such in the output so a human can sanity-check it
+    #      before trusting it the same as an exact match.
+    def _normalize(s: str) -> str:
+        return " ".join(s.replace(".", " ").replace("_", " ").split()).lower()
+
     by_name: dict[str, str] = {}
+    by_normalized: dict[str, str] = {}
     for m in slack_members:
         profile = m.get("profile", {})
         for candidate in (profile.get("real_name"), profile.get("display_name"), m.get("real_name")):
             if candidate:
                 by_name.setdefault(candidate, m["id"])
+                by_normalized.setdefault(_normalize(candidate), m["id"])
 
     matched: dict[str, str] = {}
+    matched_normalized: dict[str, str] = {}
     unmatched: list[str] = []
     for owner in sorted(owner_names):
         slack_id = by_name.get(owner)
         if slack_id:
             matched[owner] = slack_id
+            continue
+        slack_id = by_normalized.get(_normalize(owner))
+        if slack_id:
+            matched_normalized[owner] = slack_id
         else:
             unmatched.append(owner)
 
-    print(f"--- matched ({len(matched)}) ---")
+    print(f"--- matched by exact name ({len(matched)}) ---")
     print(json.dumps(matched, indent=2, ensure_ascii=False))
 
+    if matched_normalized:
+        print(
+            f"\n--- matched by normalized name only ({len(matched_normalized)}) -- "
+            "spot-check these, formatting differed (case/dots/underscores) ---"
+        )
+        print(json.dumps(matched_normalized, indent=2, ensure_ascii=False))
+
     if unmatched:
-        print(f"\n--- NOT matched by exact name ({len(unmatched)}) -- add manually if needed ---")
+        print(f"\n--- NOT matched at all ({len(unmatched)}) -- add manually if needed ---")
         for name in unmatched:
             print(f"  {name}")
 

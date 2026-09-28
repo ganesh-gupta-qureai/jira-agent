@@ -19,7 +19,15 @@ mechanical `=== Title ===` header.
 - Always a fresh Jira API pull. Never reuse a saved/cached count.
 - Inactive for reporting purposes: `Done`, `Closed`, `Resolved`, `Canceled`,
   or any issue with a populated Jira `resolution`. Never tag people on an
-  inactive ticket.
+  inactive ticket. `chu_weekly_report.py`'s JQL checks both `resolution =
+  Unresolved` AND `status NOT IN (...)` -- a ticket can be moved to
+  Resolved/Canceled status without the resolution field ever being set, a
+  real data-entry inconsistency this project has (confirmed live 2026-09-28:
+  5 tickets were being miscounted as active before this was fixed). CHU's
+  actual status catalog (confirmed via `/rest/api/3/project/CHU/statuses`)
+  has no `Done` or `Closed` status, only `Resolved`/`Canceled` -- don't add
+  those other names to the JQL, they don't exist in this project and Jira
+  will error on an unknown status value.
 
 ## Required sections (parent message)
 
@@ -89,7 +97,24 @@ mechanical `=== Title ===` header.
   support threaded replies -- webhooks are fine for a single test message,
   not for this report's real format.
 - Confirmed channel for the CHU weekly report: `#complaint-handling-us`
-  (`C055ZJ1JTV1`) -- see `CHU_SLACK_CHANNEL_ID` in `app/.env.example`.
+  (`C055ZJ1JTV1`) -- see `CHU_SLACK_CHANNEL_ID` in `app/.env.example`. The
+  channel passed via `--channel` (or the UI's channel picker, which sets
+  `CHU_SLACK_CHANNEL_ID` for the subprocess) is used for every Slack call in
+  the send -- the parent post, the permalink lookup, and every threaded
+  reply -- never a mix of the override and the env default.
+- Person mentions come from `scripts/slack_user_map.json` (Jira display name
+  -> Slack member ID). Jira doesn't expose assignee email addresses for this
+  workspace, so display name is the join key -- keep it in sync if someone's
+  Jira display name changes. No entry for a name just prints it plain, never
+  an error.
+- On `--send`, the script prints a `SLACK_POSTED=1` line as part of a
+  structured evidence block (parent ts/permalink, each reply's ts).
+  `app/backend/script_runner.py`'s Execute button normally auto-posts a
+  successful run's raw stdout to Slack too -- that sentinel tells it this
+  script already sent itself, so it skips its own post instead of
+  double-posting the same report as a second, uglier message. A dry run
+  (no `--send`) has no sentinel, so the Execute button's generic auto-post
+  still applies to it as before.
 
 ## What this agent's version deliberately does NOT do
 

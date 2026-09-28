@@ -1,0 +1,4 @@
+{
+  "_comment": "Jira assignee display name -> Slack member ID (e.g. U0123456789), used by chu_weekly_report.py to @mention ticket owners in threaded replies instead of printing a plain name. Jira's API doesn't expose assignee email addresses for this workspace, so display name is the only reliable join key -- keep this in sync if someone's Jira display name changes. Find a Slack ID via that person's Slack profile -> More -> Copy member ID, or Slack admin -> People. A name with no entry here just falls back to plain text, never an error.",
+  "_example": "\"Dhanush Peddemoni\": \"U0123456789\""
+}

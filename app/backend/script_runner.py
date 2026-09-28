@@ -53,6 +53,12 @@ _TABLE_SEP_CELL_RE = re.compile(r'^:?-{2,}:?$')
 # only when an earlier boundary actually exists, so a message that's
 # ENTIRELY this kind of aside is never emptied out.
 _SECOND_PERSON_RE = re.compile(r"\byour?\b", re.IGNORECASE)
+# A script that explicitly sent itself to Slack (chu_weekly_report.py's
+# --send path, or any similarly-written script) prints this exact line as
+# part of its own structured evidence output -- signals execute_script()
+# to skip its own generic auto-post below, so the report doesn't get
+# posted to Slack twice (once by the script, once by the runner).
+_SLACK_ALREADY_POSTED_RE = re.compile(r'^SLACK_POSTED=1$', re.MULTILINE)
 
 
 def _parse_table_row(line: str) -> list[str]:
@@ -230,14 +236,18 @@ async def execute_script(user_id: str, code: str, channel: str | None = None) ->
         stdout_text = stdout.decode("utf-8", errors="replace")[:OUTPUT_MAX_BYTES]
         # Only a genuinely successful run gets broadcast -- a failed script's
         # traceback goes to the human in the chat UI, not to the shared channel.
-        slack_error = _post_to_slack(stdout_text, channel) if ok else None
+        # A script that already posted itself (SLACK_POSTED=1) is skipped here
+        # entirely -- posting its own raw stdout on top would double-post the
+        # same report as a second, uglier message.
+        already_posted = ok and bool(_SLACK_ALREADY_POSTED_RE.search(stdout_text))
+        slack_error = _post_to_slack(stdout_text, channel) if (ok and not already_posted) else None
         result = {
             "ok": ok,
             "timed_out": False,
             "exit_code": proc.returncode,
             "stdout": stdout_text,
             "stderr": stderr.decode("utf-8", errors="replace")[:OUTPUT_MAX_BYTES],
-            "posted_to_slack": ok and slack_error is None,
+            "posted_to_slack": ok and (already_posted or slack_error is None),
             "slack_error": slack_error,
         }
         record_execution(user_id, code, result)

@@ -13,6 +13,10 @@ mutation some earlier, non-agent versions of this report performed) -- this
 agent is read-only against Jira by design (system_prompt.md's Hard Rule #1);
 a generated script inherits that same boundary even when it's executed.
 
+Owner mentions: threaded replies @mention the ticket owner when their Jira
+display name has an entry in slack_user_map.json (see that file), else they
+fall back to a plain name -- never an error either way.
+
 Env vars used (see app/.env.example):
     JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN  -- see _jira_client.py
     SLACK_BOT_TOKEN       -- xoxb-... bot token, chat:write scope, invited to
@@ -39,6 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _jira_client import JiraConfigError, search_all  # noqa: E402
+from slack_user_map import mention  # noqa: E402
 
 CATEGORY_FIELD = "customfield_13817"
 FIRST_RESPONSE_SLA_FIELD = "customfield_10087"
@@ -102,7 +107,19 @@ def _owner_name(person: dict | None) -> str:
 
 
 def fetch_active_issues() -> list[dict]:
-    jql = "project = CHU AND resolution = Unresolved ORDER BY created DESC"
+    # "Active" per docs/chu_report_rules.md: excludes a populated resolution
+    # AND excludes Resolved/Canceled status -- a ticket can be moved to one
+    # of those statuses without the resolution field ever being set (a real
+    # data-entry inconsistency in this project), so checking resolution alone
+    # isn't enough. Status names confirmed live against
+    # /rest/api/3/project/CHU/statuses (2026-09-28) -- CHU has no "Done" or
+    # "Closed" status, so those aren't included here even though the docs
+    # mention them as generic examples.
+    jql = (
+        'project = CHU AND resolution = Unresolved '
+        'AND status NOT IN ("Resolved", "Canceled") '
+        'ORDER BY created DESC'
+    )
     return search_all(jql, fields=_FIELDS)
 
 
@@ -202,12 +219,18 @@ def build_parent_message(r: dict) -> str:
     return "\n".join(lines)
 
 
-def build_person_replies(r: dict) -> list[str]:
+def build_person_replies(r: dict) -> list[tuple[str, str]]:
+    """Returns (owner, reply_text) pairs -- the owner name travels alongside
+    the text so send_to_slack() can report per-owner thread results as
+    execution evidence, not just an opaque list of strings."""
     replies = []
     for owner, buckets in sorted(r["by_person"].items(), key=lambda kv: -len(kv[1]["active"])):
         if not any(buckets.values()):
             continue
-        lines = [f"*{owner}*"]
+        # Unassigned isn't a person -- @mentioning it would be meaningless
+        # (and there's no Slack ID for "nobody" to look up anyway).
+        header = mention(owner) if owner != "Unassigned" else owner
+        lines = [f"*{header}*"]
         if buckets["active"]:
             lines.append(f"- Active open: {len(buckets['active'])}")
         if buckets["todo"]:
@@ -220,7 +243,7 @@ def build_person_replies(r: dict) -> list[str]:
             lines.append(f"- Tickets 7-30 days old: {len(buckets['age_7_30'])}")
         if buckets["age_30_plus"]:
             lines.append(f"- Tickets older than 30 days: {len(buckets['age_30_plus'])}")
-        replies.append("\n".join(lines))
+        replies.append((owner, "\n".join(lines)))
     return replies
 
 
@@ -243,16 +266,42 @@ def _slack_post(token: str, channel: str, text: str, thread_ts: str | None = Non
     return body
 
 
-def send_to_slack(channel: str, parent_text: str, thread_replies: list[str]) -> str:
+def _slack_permalink(token: str, channel: str, ts: str) -> str | None:
+    """Best-effort -- a report that posted fine but couldn't fetch a
+    permalink still succeeded, so this returns None rather than raising."""
+    url = "https://slack.com/api/chat.getPermalink?" + urllib.parse.urlencode(
+        {"channel": channel, "message_ts": ts}
+    )
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except (urllib.error.HTTPError, urllib.error.URLError):
+        return None
+    return body.get("permalink") if body.get("ok") else None
+
+
+def send_to_slack(channel: str, parent_text: str, thread_replies: list[tuple[str, str]]) -> dict:
+    """`channel` is used for EVERY Slack API call this function makes (the
+    parent post, the permalink lookup, and every threaded reply) -- there is
+    no separate env-default fallback in here, so a human-chosen channel
+    override from the caller always wins for the whole send, not just part
+    of it.
+
+    Returns a plain dict (not just the parent ts) so main() can print full
+    execution evidence: the parent ts/permalink and each reply's own ts."""
     token = os.environ.get("SLACK_BOT_TOKEN", "")
     if not token:
         sys.exit("SLACK_BOT_TOKEN is not set -- see app/.env.example")
     parent = _slack_post(token, channel, parent_text)
     thread_ts = str(parent.get("ts") or "")
-    for reply in thread_replies:
-        _slack_post(token, channel, reply, thread_ts=thread_ts)
+    permalink = _slack_permalink(token, channel, thread_ts)
+    reply_results = []
+    for owner, reply in thread_replies:
+        result = _slack_post(token, channel, reply, thread_ts=thread_ts)
+        reply_results.append({"owner": owner, "ts": str(result.get("ts") or "")})
         time.sleep(1.0)  # avoid Slack's per-channel rate limit
-    return thread_ts
+    return {"channel": channel, "parent_ts": thread_ts, "parent_permalink": permalink, "replies": reply_results}
 
 
 def main() -> None:
@@ -273,13 +322,26 @@ def main() -> None:
     print("--- parent message ---")
     print(parent)
     print(f"\n--- {len(replies)} thread repl(y/ies) ---")
-    for r in replies:
-        print(r)
+    for _owner, text in replies:
+        print(text)
         print()
 
     if args.send:
-        ts = send_to_slack(args.channel, parent, replies)
-        print(f"\nposted to channel {args.channel}, parent ts={ts}")
+        # This structured block is deliberately grep-able: script_runner.py's
+        # Execute button auto-posts a successful run's stdout to Slack too,
+        # which would double-post this report (it already sent itself,
+        # above) -- SLACK_POSTED=1 is the signal that tells it to suppress
+        # that generic post for this run. See script_runner.py's
+        # _SLACK_ALREADY_POSTED_RE.
+        evidence = send_to_slack(args.channel, parent, replies)
+        print("\n--- slack send result ---")
+        print("SLACK_POSTED=1")
+        print(f"channel={evidence['channel']}")
+        print(f"parent_ts={evidence['parent_ts']}")
+        print(f"parent_permalink={evidence['parent_permalink'] or '(unavailable)'}")
+        for i, reply in enumerate(evidence["replies"], 1):
+            print(f"reply_{i}_owner={reply['owner']}")
+            print(f"reply_{i}_ts={reply['ts']}")
     else:
         print("\n(dry run -- nothing sent. Re-run with --send to post to Slack.)")
 

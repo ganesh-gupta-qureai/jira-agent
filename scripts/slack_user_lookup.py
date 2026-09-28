@@ -24,6 +24,7 @@ Usage:
 """
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import sys
@@ -33,6 +34,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _jira_client import JiraConfigError, search_all  # noqa: E402
+
+# Common English first-name <-> nickname pairs -- lets "Ron Wider" (Slack)
+# match "Ronald Wider" (Jira) even though neither exact nor normalized
+# string matching can, since the two names aren't the same string in any
+# casing/spacing. Deliberately a small, well-known table rather than a
+# general nickname-guessing algorithm -- every pair here is unambiguous, so
+# this never invents a nickname relationship that isn't actually common.
+_NICKNAMES: dict[str, set[str]] = {}
+for _a, _b in [
+    ("ron", "ronald"), ("rob", "robert"), ("bob", "robert"), ("bill", "william"),
+    ("will", "william"), ("mike", "michael"), ("dave", "david"), ("dan", "daniel"),
+    ("dan", "danielle"), ("steve", "steven"), ("steve", "stephen"), ("chris", "christopher"),
+    ("chris", "christine"), ("liz", "elizabeth"), ("beth", "elizabeth"), ("jim", "james"),
+    ("joe", "joseph"), ("tom", "thomas"), ("tony", "anthony"), ("alex", "alexander"),
+    ("alex", "alexandra"), ("sam", "samuel"), ("sam", "samantha"), ("nick", "nicholas"),
+    ("matt", "matthew"), ("andy", "andrew"), ("ken", "kenneth"), ("ted", "theodore"),
+    ("greg", "gregory"), ("jen", "jennifer"), ("jenny", "jennifer"), ("kate", "katherine"),
+    ("katie", "katherine"), ("pat", "patricia"), ("patty", "patricia"),
+]:
+    _NICKNAMES.setdefault(_a, set()).add(_b)
+    _NICKNAMES.setdefault(_b, set()).add(_a)
 
 
 def _slack_users_list(token: str) -> list[dict]:
@@ -105,6 +127,23 @@ def main() -> None:
     def _normalize(s: str) -> str:
         return " ".join(s.replace(".", " ").replace("_", " ").split()).lower()
 
+    def _similarity(jira_name: str, slack_name: str) -> float:
+        """0..1 confidence that these are the same person: last name must
+        match exactly (this is the real signal -- two different people
+        sharing a first name is common, sharing a last name in the same
+        small org is not), then first name gets a nickname-table check or a
+        plain string-similarity score."""
+        j_parts = _normalize(jira_name).split()
+        s_parts = _normalize(slack_name).split()
+        if not j_parts or not s_parts or j_parts[-1] != s_parts[-1]:
+            return 0.0
+        j_first, s_first = j_parts[0], s_parts[0]
+        if j_first == s_first:
+            return 1.0
+        if s_first in _NICKNAMES.get(j_first, set()) or j_first in _NICKNAMES.get(s_first, set()):
+            return 0.95
+        return 0.5 * difflib.SequenceMatcher(None, j_first, s_first).ratio()
+
     by_name: dict[str, str] = {}
     by_normalized: dict[str, str] = {}
     for m in slack_members:
@@ -128,6 +167,40 @@ def main() -> None:
         else:
             unmatched.append(owner)
 
+    # Third pass: triangulate the leftovers. Only Slack members not already
+    # claimed by an exact/normalized match are candidates (elimination --
+    # once a Slack ID is used, it's removed from the pool so two Jira
+    # owners can't both get attributed to the same person). Scored pairs are
+    # resolved highest-confidence-first, and only a score >= 0.7 (last name
+    # exact + either identical or nicknamed first name) is proposed; a low
+    # first-name-similarity score alone is never enough on its own.
+    used_ids = set(matched.values()) | set(matched_normalized.values())
+    remaining_slack = [
+        (name, m["id"])
+        for m in slack_members
+        if m["id"] not in used_ids
+        for name in {m.get("profile", {}).get("real_name"), m.get("profile", {}).get("display_name")}
+        if name
+    ]
+    candidates: list[tuple[float, str, str, str]] = []  # (score, jira_owner, slack_name, slack_id)
+    for owner in unmatched:
+        for slack_name, slack_id in remaining_slack:
+            score = _similarity(owner, slack_name)
+            if score >= 0.7:
+                candidates.append((score, owner, slack_name, slack_id))
+    candidates.sort(key=lambda c: -c[0])
+
+    matched_fuzzy: dict[str, dict[str, str]] = {}
+    claimed_owners: set[str] = set()
+    claimed_ids: set[str] = set()
+    for score, owner, slack_name, slack_id in candidates:
+        if owner in claimed_owners or slack_id in claimed_ids:
+            continue
+        matched_fuzzy[owner] = {"slack_id": slack_id, "slack_name": slack_name, "confidence": round(score, 2)}
+        claimed_owners.add(owner)
+        claimed_ids.add(slack_id)
+    unmatched = [o for o in unmatched if o not in claimed_owners]
+
     print(f"--- matched by exact name ({len(matched)}) ---")
     print(json.dumps(matched, indent=2, ensure_ascii=False))
 
@@ -137,6 +210,14 @@ def main() -> None:
             "spot-check these, formatting differed (case/dots/underscores) ---"
         )
         print(json.dumps(matched_normalized, indent=2, ensure_ascii=False))
+
+    if matched_fuzzy:
+        print(
+            f"\n--- triangulated by last name + nickname/similarity ({len(matched_fuzzy)}) -- "
+            "VERIFY these carefully before trusting, especially confidence < 0.9 ---"
+        )
+        for owner, info in matched_fuzzy.items():
+            print(f'  "{owner}": "{info["slack_id"]}"   # matched to Slack real name "{info["slack_name"]}", confidence {info["confidence"]}')
 
     if unmatched:
         print(f"\n--- NOT matched at all ({len(unmatched)}) -- add manually if needed ---")

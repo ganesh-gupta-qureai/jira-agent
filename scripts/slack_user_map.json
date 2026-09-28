@@ -1,4 +1,16 @@
 {
   "_comment": "Jira assignee display name -> Slack member ID (e.g. U0123456789), used by chu_weekly_report.py to @mention ticket owners in threaded replies instead of printing a plain name. Jira's API doesn't expose assignee email addresses for this workspace, so display name is the only reliable join key -- keep this in sync if someone's Jira display name changes. Find a Slack ID via that person's Slack profile -> More -> Copy member ID, or Slack admin -> People. A name with no entry here just falls back to plain text, never an error.",
-  "_example": "\"Dhanush Peddemoni\": \"U0123456789\""
+  "_matched_2026-09-28": "Auto-matched via scripts/slack_user_lookup.py (exact display/real-name match). 6 owners did NOT match and are still missing: Apoorv.Bajpai, Mrunmayee.Nasery, Ronald Wider, Sai.Vinayak, anish chhaparwal, qHive -- add manually if their Slack IDs are known.",
+  "Alen Abraham": "U044780KUE5",
+  "Dhanush Peddemoni": "U0ADWFQ1XN0",
+  "Fawwaz Chiwne": "U04JWMNJAGG",
+  "Jerin Jose Philip": "U0AD5TES8L8",
+  "John Chomko": "U09TTJYU05P",
+  "Konark Chaudhari": "U05DJR2L4SV",
+  "Parasaran": "U05MX5HSZ1N",
+  "Raja Babu": "U0AC7T3FD4Y",
+  "Shamil Thuruthipalli": "U0A8GNV8QC9",
+  "Stephanie Lamar": "U0BNA1LCQH2",
+  "Vatsal Kanodia": "U0ASD2QS4G6",
+  "Vineet Choudhary": "U0A81TZ9VRN"
 }

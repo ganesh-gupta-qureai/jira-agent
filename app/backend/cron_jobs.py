@@ -57,6 +57,7 @@ def create_job(
     start_date: str | None = None,
     end_date: str | None = None,
     channel: str | None = None,
+    send: bool = False,
 ) -> dict:
     job = {
         "id": uuid.uuid4().hex,
@@ -66,6 +67,7 @@ def create_job(
         "start_date": start_date,  # ISO date (YYYY-MM-DD) or None -- runs start firing immediately
         "end_date": end_date,      # ISO date (YYYY-MM-DD) or None -- runs indefinitely
         "channel": channel,        # Slack channel ID override, or None for CHU_SLACK_CHANNEL_ID's default
+        "send": send,              # sets CHU_REPORT_SEND=1 on every scheduled run (see script_runner.py)
         "created_at": time.time(),
         "enabled": True,
         "last_run_at": None,

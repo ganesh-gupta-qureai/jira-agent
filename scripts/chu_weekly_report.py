@@ -27,6 +27,12 @@ Usage:
     uv run scripts/chu_weekly_report.py              # dry run, prints only
     uv run scripts/chu_weekly_report.py --send        # posts to Slack
     uv run scripts/chu_weekly_report.py --send --channel C0XXXXXXX  # override channel
+
+Send mode can also come from CHU_REPORT_SEND=1 in the environment, not just
+--send -- the app's Execute/Schedule buttons run this script with no CLI
+args at all (see app/backend/script_runner.py's execute_script), so the
+UI's "actually send" toggle has to reach this some other way. A real
+terminal invocation with --send still works exactly the same.
 """
 from __future__ import annotations
 
@@ -309,6 +315,9 @@ def main() -> None:
     parser.add_argument("--send", action="store_true", help="actually post to Slack (default: dry run, print only)")
     parser.add_argument("--channel", default=os.environ.get("CHU_SLACK_CHANNEL_ID", "C055ZJ1JTV1"))
     args = parser.parse_args()
+    # See the module docstring -- the Execute/Schedule buttons can't pass
+    # --send as a CLI arg, so CHU_REPORT_SEND=1 is the equivalent trigger.
+    args.send = args.send or os.environ.get("CHU_REPORT_SEND") == "1"
 
     try:
         issues = fetch_active_issues()

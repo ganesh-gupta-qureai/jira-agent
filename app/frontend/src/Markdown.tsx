@@ -218,6 +218,9 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   // Shared by Execute and Schedule -- both post through the same channel
   // override (see script_runner.execute_script's `channel` param).
   const [channel, setChannel] = useState<string>(DEFAULT_SLACK_CHANNEL)
+  // Off by default -- Execute/Schedule stay a safe preview (CHU_REPORT_SEND
+  // unset) unless the human explicitly opts into actually posting.
+  const [send, setSend] = useState(false)
 
   function download() {
     const blob = new Blob([code], { type: 'text/plain' })
@@ -240,7 +243,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       const res = await fetch(apiUrl('/api/execute-script'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, channel }),
+        body: JSON.stringify({ code, channel, send }),
       })
       if (bounceIfUnauthorized(res)) return
       if (!res.ok) {
@@ -260,7 +263,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
     setSchedBusy(true)
     setSchedError(null)
     try {
-      await createCronJob(values.name, code, values.cronExpr, values.startDate, values.endDate, channel)
+      await createCronJob(values.name, code, values.cronExpr, values.startDate, values.endDate, channel, send)
       setSchedDone(true)
       setSchedOpen(false)
     } catch (err) {
@@ -319,6 +322,15 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
                   </option>
                 ))}
               </select>
+            )}
+            {executable && (
+              <label
+                className="md-codeblock__send-toggle"
+                title="Off = safe preview only. On = the script actually posts to the channel above (sets CHU_REPORT_SEND=1)."
+              >
+                <input type="checkbox" checked={send} onChange={(e) => setSend(e.target.checked)} />
+                Actually send
+              </label>
             )}
           </div>
         </div>

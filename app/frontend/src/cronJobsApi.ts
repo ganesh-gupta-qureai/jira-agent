@@ -9,6 +9,7 @@ export type CronJob = {
   start_date: string | null // ISO date (YYYY-MM-DD)
   end_date: string | null // ISO date (YYYY-MM-DD)
   channel: string | null // Slack channel ID override
+  send: boolean // whether each run sets CHU_REPORT_SEND=1
   created_at: number // unix seconds (float)
   enabled: boolean
   last_run_at: number | null
@@ -36,11 +37,12 @@ export async function createCronJob(
   start_date: string | null,
   end_date: string | null,
   channel: string | null,
+  send: boolean,
 ): Promise<CronJob> {
   const res = await fetch(apiUrl('/api/cron-jobs'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, code, cron_expr, start_date, end_date, channel }),
+    body: JSON.stringify({ name, code, cron_expr, start_date, end_date, channel, send }),
   })
   await throwIfBad(res)
   return res.json()

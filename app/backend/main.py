@@ -140,6 +140,10 @@ class ExecuteScriptRequest(BaseModel):
     # Slack channel ID override from the UI's channel picker; None = use
     # CHU_SLACK_CHANNEL_ID's env default.
     channel: str | None = None
+    # UI's "actually send" toggle -- sets CHU_REPORT_SEND=1 for the subprocess
+    # (see script_runner.execute_script). Default False so Execute stays a
+    # safe preview unless the human explicitly opts in.
+    send: bool = False
 
 
 class CreateCronJobRequest(BaseModel):
@@ -151,6 +155,7 @@ class CreateCronJobRequest(BaseModel):
     start_date: str | None = None  # ISO date (YYYY-MM-DD); None = start immediately
     end_date: str | None = None    # ISO date (YYYY-MM-DD); None = no end
     channel: str | None = None     # Slack channel ID override; None = CHU_SLACK_CHANNEL_ID default
+    send: bool = False             # sets CHU_REPORT_SEND=1 on every scheduled run
 
 
 class SetCronJobEnabledRequest(BaseModel):
@@ -290,7 +295,7 @@ async def execute_script_route(req: ExecuteScriptRequest, user: str = Depends(cu
     -- the agent itself never calls this; see script_runner.py."""
     if not req.code.strip():
         raise HTTPException(status_code=400, detail="no script content")
-    return await execute_script(user, req.code, req.channel)
+    return await execute_script(user, req.code, req.channel, req.send)
 
 
 @router.get("/api/executions")
@@ -327,7 +332,7 @@ async def create_cron_job_route(req: CreateCronJobRequest, user: str = Depends(c
     if req.start_date and req.end_date and req.end_date < req.start_date:
         raise HTTPException(status_code=400, detail="end date can't be before start date")
     job = cron_jobs.create_job(
-        user, req.name.strip(), req.code, req.cron_expr.strip(), req.start_date, req.end_date, req.channel
+        user, req.name.strip(), req.code, req.cron_expr.strip(), req.start_date, req.end_date, req.channel, req.send
     )
     cron_scheduler.schedule_job(user, job)
     return job

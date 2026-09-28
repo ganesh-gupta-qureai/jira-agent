@@ -175,7 +175,7 @@ def _post_to_slack(stdout: str, channel: str | None = None) -> str | None:
     return None
 
 
-async def execute_script(user_id: str, code: str, channel: str | None = None) -> dict:
+async def execute_script(user_id: str, code: str, channel: str | None = None, send: bool = False) -> dict:
     """Write `code` to a throwaway file in the user's own workspace (so it
     sees the same scripts/.env/docs symlinks a `uv run scripts/...` call
     would) and run it via `uv run`, same as a human would from a terminal.
@@ -186,7 +186,14 @@ async def execute_script(user_id: str, code: str, channel: str | None = None) ->
     chu_weekly_report.py reads that same env var as its own --channel
     default, so overriding it here keeps the script's own internal Slack
     calls and this function's auto-post targeting the same channel instead
-    of silently posting to two different ones."""
+    of silently posting to two different ones.
+
+    `send` (the UI's "actually send" toggle) sets CHU_REPORT_SEND=1 for the
+    subprocess -- this function never passes argv to the script it runs (see
+    the `uv run` call below), so a script's own `--send`-style CLI flag can
+    never be reached this way. CHU_REPORT_SEND is the env-based equivalent
+    a generated script can check instead, same pattern as CHU_SLACK_CHANNEL_ID
+    for channel. A script that doesn't read that env var just ignores it."""
     ws = user_workspace(user_id)
     generated_dir = ws / "generated"
     generated_dir.mkdir(exist_ok=True)
@@ -197,6 +204,8 @@ async def execute_script(user_id: str, code: str, channel: str | None = None) ->
     env.pop("VIRTUAL_ENV", None)  # use the workspace venv, not the backend's own
     if channel:
         env["CHU_SLACK_CHANNEL_ID"] = channel
+    if send:
+        env["CHU_REPORT_SEND"] = "1"
     # Every script modeled on scripts/jira_search.py's own documented pattern
     # does `sys.path.insert(0, str(Path(__file__).resolve().parent))` to
     # import _jira_client -- that only adds the SCRIPT's own directory, which

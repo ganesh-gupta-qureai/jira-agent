@@ -72,6 +72,8 @@ function JobRow({ job, onChanged }: { job: CronJob; onChanged: (job: CronJob | n
           <pre className="md-pre">{job.cron_expr}</pre>
           <div className="history__label">channel</div>
           <pre className="md-pre">{channelLabel(job.channel)}</pre>
+          <div className="history__label">send mode</div>
+          <pre className="md-pre">{job.send ? 'Actually sends to Slack' : 'Preview only (never posts)'}</pre>
           {(job.start_date || job.end_date) && (
             <>
               <div className="history__label">date range</div>

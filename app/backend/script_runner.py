@@ -134,17 +134,25 @@ def _to_slack_mrkdwn(body: str) -> str:
     return _convert_tables(body)
 
 
-def _post_to_slack(stdout: str, channel: str | None = None) -> str | None:
-    """Post a successful run's output to a Slack channel -- `channel` if
-    given (a human-chosen override from the UI's channel picker), else the
-    CHU_SLACK_CHANNEL_ID env default. Returns an error string on failure,
-    None on success -- never raises, so a Slack-posting problem never hides
-    the fact that the script itself ran fine (the caller still reports
-    ok/exit_code/stdout independent of this)."""
+def _post_to_slack(stdout: str, channel: str | None) -> str | None:
+    """Post a successful run's output to a Slack channel -- ONLY the
+    explicit, human-chosen `channel` (from the UI's channel picker, stored
+    on a cron job). Returns an error string on failure, None on success --
+    never raises, so a Slack-posting problem never hides the fact that the
+    script itself ran fine (the caller still reports ok/exit_code/stdout
+    independent of this).
+
+    Deliberately does NOT fall back to a bare CHU_SLACK_CHANNEL_ID env var
+    when `channel` is missing (root-caused 2026-09-29: a cron job stored
+    with no channel fell through to that env var, which was set to the
+    real production channel -- two Slack posts landed in #us-operations
+    that were meant for testing). A run with no explicit channel now simply
+    doesn't auto-post, rather than silently guessing at a channel."""
     token = os.environ.get("SLACK_BOT_TOKEN", "")
-    channel = channel or os.environ.get("CHU_SLACK_CHANNEL_ID", "")
-    if not token or not channel:
-        return "SLACK_BOT_TOKEN or CHU_SLACK_CHANNEL_ID is not set -- see app/.env.example"
+    if not channel:
+        return "no channel selected -- refusing to guess (see script_runner.py's _post_to_slack)"
+    if not token:
+        return "SLACK_BOT_TOKEN is not set -- see app/.env.example"
 
     body = stdout.strip() or "(script ran successfully, no output)"
     truncated = len(body) > SLACK_MESSAGE_MAX_CHARS
@@ -193,7 +201,23 @@ async def execute_script(user_id: str, code: str, channel: str | None = None, se
     the `uv run` call below), so a script's own `--send`-style CLI flag can
     never be reached this way. CHU_REPORT_SEND is the env-based equivalent
     a generated script can check instead, same pattern as CHU_SLACK_CHANNEL_ID
-    for channel. A script that doesn't read that env var just ignores it."""
+    for channel. A script that doesn't read that env var just ignores it.
+
+    `send` with no `channel` is refused outright rather than run -- this is
+    the exact shape of the 2026-09-29 incident (a stored job with `send`
+    effectively on but no channel chosen fell through to the container's
+    bare CHU_SLACK_CHANNEL_ID env var, which resolved to production).
+    Production sends must always name their channel explicitly."""
+    if send and not channel:
+        return {
+            "ok": False,
+            "timed_out": False,
+            "exit_code": None,
+            "stdout": "",
+            "stderr": "Refusing to run in send mode with no channel selected -- pick a channel first.",
+            "posted_to_slack": False,
+            "slack_error": None,
+        }
     ws = user_workspace(user_id)
     generated_dir = ws / "generated"
     generated_dir.mkdir(exist_ok=True)

@@ -16,6 +16,16 @@ from pathlib import Path
 
 from users import USERS_ROOT
 
+# Must match app/frontend/src/slackChannels.ts's DEFAULT_SLACK_CHANNEL --
+# the safe, test-only channel a job falls back to when it has no explicit
+# channel recorded. Root-caused 2026-09-29: a job stored with channel=None
+# silently fell through to a bare CHU_SLACK_CHANNEL_ID env var at run time,
+# which resolved to the real production channel. A job's channel is never
+# allowed to be empty/None past this point -- normalized on both write
+# (create_job) and read (_read_all, so an already-stored null-channel job
+# self-heals on its very next run without needing manual data surgery).
+DEFAULT_TEST_CHANNEL = "C0B86EU1Y03"  # #jira-automation-test-channel
+
 
 def _jobs_path(user_id: str) -> Path:
     d = USERS_ROOT / user_id
@@ -28,9 +38,17 @@ def _read_all(user_id: str) -> list[dict]:
     if not path.exists():
         return []
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        jobs = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return []
+    changed = False
+    for j in jobs:
+        if not j.get("channel"):
+            j["channel"] = DEFAULT_TEST_CHANNEL
+            changed = True
+    if changed:
+        _write_all(user_id, jobs)
+    return jobs
 
 
 def _write_all(user_id: str, jobs: list[dict]) -> None:
@@ -66,7 +84,7 @@ def create_job(
         "cron_expr": cron_expr,
         "start_date": start_date,  # ISO date (YYYY-MM-DD) or None -- runs start firing immediately
         "end_date": end_date,      # ISO date (YYYY-MM-DD) or None -- runs indefinitely
-        "channel": channel,        # Slack channel ID override, or None for CHU_SLACK_CHANNEL_ID's default
+        "channel": channel or DEFAULT_TEST_CHANNEL,  # never null -- see DEFAULT_TEST_CHANNEL's comment
         "send": send,              # sets CHU_REPORT_SEND=1 on every scheduled run (see script_runner.py)
         "created_at": time.time(),
         "enabled": True,

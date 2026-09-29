@@ -38,11 +38,21 @@ export async function createCronJob(
   end_date: string | null,
   channel: string | null,
   send: boolean,
+  confirmedProduction: boolean,
 ): Promise<CronJob> {
   const res = await fetch(apiUrl('/api/cron-jobs'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, code, cron_expr, start_date, end_date, channel, send }),
+    body: JSON.stringify({
+      name,
+      code,
+      cron_expr,
+      start_date,
+      end_date,
+      channel,
+      send,
+      confirmed_production: confirmedProduction,
+    }),
   })
   await throwIfBad(res)
   return res.json()

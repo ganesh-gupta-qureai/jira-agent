@@ -35,7 +35,7 @@ import cron_scheduler
 from execution_history import clear_executions, delete_execution, list_executions
 from langfuse_emit import emit_turn
 from runlog import get_runlog
-from script_runner import execute_script
+from script_runner import PRODUCTION_SLACK_CHANNEL_ID, execute_script
 
 
 class _TurnTrace:
@@ -144,6 +144,12 @@ class ExecuteScriptRequest(BaseModel):
     # (see script_runner.execute_script). Default False so Execute stays a
     # safe preview unless the human explicitly opts in.
     send: bool = False
+    # True only after the human explicitly confirmed a browser dialog warning
+    # them the target is the production channel (see Markdown.tsx's execute()).
+    # Required whenever send=True and channel is PRODUCTION_SLACK_CHANNEL_ID --
+    # enforced server-side, not just in the UI, so a direct API call can't
+    # skip the confirmation either.
+    confirmed_production: bool = False
 
 
 class CreateCronJobRequest(BaseModel):
@@ -156,6 +162,7 @@ class CreateCronJobRequest(BaseModel):
     end_date: str | None = None    # ISO date (YYYY-MM-DD); None = no end
     channel: str | None = None     # Slack channel ID override; None = CHU_SLACK_CHANNEL_ID default
     send: bool = False             # sets CHU_REPORT_SEND=1 on every scheduled run
+    confirmed_production: bool = False  # see ExecuteScriptRequest's field of the same name
 
 
 class SetCronJobEnabledRequest(BaseModel):
@@ -295,6 +302,11 @@ async def execute_script_route(req: ExecuteScriptRequest, user: str = Depends(cu
     -- the agent itself never calls this; see script_runner.py."""
     if not req.code.strip():
         raise HTTPException(status_code=400, detail="no script content")
+    if req.send and req.channel == PRODUCTION_SLACK_CHANNEL_ID and not req.confirmed_production:
+        raise HTTPException(
+            status_code=400,
+            detail="Sending to the production channel requires explicit confirmation.",
+        )
     return await execute_script(user, req.code, req.channel, req.send)
 
 
@@ -326,6 +338,11 @@ async def create_cron_job_route(req: CreateCronJobRequest, user: str = Depends(c
         raise HTTPException(status_code=400, detail="no script content")
     if not req.name.strip():
         raise HTTPException(status_code=400, detail="job needs a name")
+    if req.send and req.channel == PRODUCTION_SLACK_CHANNEL_ID and not req.confirmed_production:
+        raise HTTPException(
+            status_code=400,
+            detail="Scheduling a job that sends to the production channel requires explicit confirmation.",
+        )
     error = cron_scheduler.validate_cron(req.cron_expr)
     if error:
         raise HTTPException(status_code=400, detail=f"invalid cron expression: {error}")

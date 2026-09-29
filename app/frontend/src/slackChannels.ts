@@ -10,3 +10,9 @@ export const SLACK_CHANNELS = [
 // parallel with the existing external automation for now, not replacing it,
 // so posts should land somewhere safe to spam by default.
 export const DEFAULT_SLACK_CHANNEL = SLACK_CHANNELS[0].id
+
+// Sending here needs an extra human confirmation step (see CodeBlock's
+// execute()/submitSchedule() in Markdown.tsx) -- root-caused 2026-09-29
+// after two accidental production posts. Must match
+// app/backend/script_runner.py's PRODUCTION_SLACK_CHANNEL_ID.
+export const PRODUCTION_SLACK_CHANNEL_ID = 'C055ZJ1JTV1'

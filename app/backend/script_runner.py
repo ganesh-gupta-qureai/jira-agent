@@ -31,6 +31,13 @@ OUTPUT_MAX_BYTES = 64 * 1024
 # capped separately and much shorter for what actually gets posted.
 SLACK_MESSAGE_MAX_CHARS = 3_000
 
+# A send targeting this channel requires explicit confirmation (see
+# main.py's execute_script_route/create_cron_job_route, which check this
+# before ever calling execute_script) -- root-caused 2026-09-29 after two
+# accidental production posts. Must match app/frontend/src/slackChannels.ts's
+# PRODUCTION_SLACK_CHANNEL_ID.
+PRODUCTION_SLACK_CHANNEL_ID = "C055ZJ1JTV1"
+
 # Matches a plain-text report's ASCII section divider, e.g.
 # "=== CHU: Issues & Incidents Report ===" or "--- By Status ---".
 _ASCII_HEADER_RE = re.compile(r'^(?:=|-){2,}\s*(.+?)\s*(?:=|-){2,}$', re.MULTILINE)

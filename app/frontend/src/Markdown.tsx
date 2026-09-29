@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { apiUrl, bounceIfUnauthorized } from './api'
 import { createCronJob } from './cronJobsApi'
 import { ScheduleForm, type ScheduleValues } from './ScheduleForm'
-import { DEFAULT_SLACK_CHANNEL, SLACK_CHANNELS } from './slackChannels'
+import { DEFAULT_SLACK_CHANNEL, PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } from './slackChannels'
 
 // Minimal, dependency-free markdown renderer for assistant chat output.
 // Handles the subset the agent actually emits: headings, fenced code blocks,
@@ -236,6 +236,14 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 
   async function execute() {
     if (running) return
+    let confirmedProduction = false
+    if (send && channel === PRODUCTION_SLACK_CHANNEL_ID) {
+      const ok = window.confirm(
+        'This will send a REAL message to #complaint-handling-us (production), not a test channel. Continue?',
+      )
+      if (!ok) return
+      confirmedProduction = true
+    }
     setRunning(true)
     setError(null)
     setResult(null)
@@ -243,7 +251,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       const res = await fetch(apiUrl('/api/execute-script'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, channel, send }),
+        body: JSON.stringify({ code, channel, send, confirmed_production: confirmedProduction }),
       })
       if (bounceIfUnauthorized(res)) return
       if (!res.ok) {
@@ -260,10 +268,27 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 
   async function submitSchedule(values: ScheduleValues) {
     if (schedBusy) return
+    let confirmedProduction = false
+    if (send && channel === PRODUCTION_SLACK_CHANNEL_ID) {
+      const ok = window.confirm(
+        'This scheduled job will send REAL messages to #complaint-handling-us (production) every time it runs, not a test channel. Continue?',
+      )
+      if (!ok) return
+      confirmedProduction = true
+    }
     setSchedBusy(true)
     setSchedError(null)
     try {
-      await createCronJob(values.name, code, values.cronExpr, values.startDate, values.endDate, channel, send)
+      await createCronJob(
+        values.name,
+        code,
+        values.cronExpr,
+        values.startDate,
+        values.endDate,
+        channel,
+        send,
+        confirmedProduction,
+      )
       setSchedDone(true)
       setSchedOpen(false)
     } catch (err) {

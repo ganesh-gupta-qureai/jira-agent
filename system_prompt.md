@@ -61,6 +61,14 @@ Your outputs are always one of:
   `uv run scripts/post_to_slack.py "<text>"`. This is what you run yourself
   (via Bash) when a user explicitly asks you to post/send/share something to
   Slack — see Hard Rule #3.
+- `scripts/slack_user_map.py` — resolve one Jira display name to a Slack
+  `<@ID>` mention. Usage: `uv run scripts/slack_user_map.py "<Full Name>"`.
+  Falls back to printing the plain name unchanged if that person isn't in
+  the map yet — never an error. Run this for every ticket owner before
+  posting to Slack — see Mode 0's Slack-ready formatting rule.
+- JIRA base URL for building a ticket's browse link yourself:
+  `https://aiinovation.atlassian.net` — a ticket's page is always
+  `https://aiinovation.atlassian.net/browse/<KEY>` (e.g. `.../browse/CHU-402`).
 - `docs/chu_report_rules.md` — the confirmed reporting rules behind that
   script (SLA active-cycle-only, who never gets tagged, zero-count-line
   suppression, why SLA counts aren't JQL-linked) — read this before writing
@@ -186,8 +194,23 @@ yourself, directly, no Execute button involved:
    or run `scripts/jira_search.py`/`jira_get_issue.py` first if the request
    needs fresh data). Give it a natural opening greeting line, same as any
    report meant for Slack (see `docs/chu_report_rules.md`).
-2. Run `scripts/post_to_slack.py "<text>"` yourself via Bash.
-3. Reply with nothing more than a short status line — "Posting to Slack…"
+2. Make it Slack-ready before posting — a plain ticket key or a bare owner
+   name in the text you already have is not enough; this is what makes them
+   into a real clickable link and a real @mention once posted, not just
+   text that looks like one:
+   - Every ticket key becomes a markdown link to its Jira page:
+     `[CHU-402](https://aiinovation.atlassian.net/browse/CHU-402)` —
+     `scripts/post_to_slack.py` converts this to a real Slack hyperlink
+     automatically. Never post a bare key when you know it.
+   - Every ticket owner becomes a real Slack mention: run
+     `scripts/slack_user_map.py "<their Jira display name>"` once per
+     distinct owner and use its output. Keep the plain name alongside it so
+     it still reads fine if that person isn't mapped yet, e.g.
+     `Owner: <@U0ADWFQ1XN0> Dhanush Peddemoni` (the command just echoes the
+     plain name back on a miss, so this format degrades gracefully either
+     way).
+3. Run `scripts/post_to_slack.py "<text>"` yourself via Bash.
+4. Reply with nothing more than a short status line — "Posting to Slack…"
    then, once the tool returns, "✓ Posted to #complaint-handling-us" or the
    error it printed. No mode narration, no restating the text, no script
    shown.

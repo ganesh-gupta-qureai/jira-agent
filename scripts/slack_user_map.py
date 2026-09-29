@@ -2,8 +2,18 @@
 slack_user_map.json) used to @mention ticket owners in Slack replies. A
 missing file or a name with no entry is never an error -- callers fall back
 to the plain display name, since incomplete mapping data shouldn't break the
-report."""
+report.
+
+Also runnable directly as a CLI so the live agent (not just a generated
+script importing this module) can resolve one owner name to a Slack mention
+before posting via scripts/post_to_slack.py -- see system_prompt.md's
+"Slack-ready formatting" rule.
+
+Usage:
+    uv run scripts/slack_user_map.py "Dhanush Peddemoni"
+"""
 import json
+import sys
 from pathlib import Path
 
 _MAP_PATH = Path(__file__).resolve().parent / "slack_user_map.json"
@@ -24,3 +34,10 @@ def mention(name: str) -> str:
     else the plain name unchanged."""
     slack_id = load_user_map().get(name)
     return f"<@{slack_id}>" if slack_id else name
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print('usage: slack_user_map.py "<Jira display name>"', file=sys.stderr)
+        sys.exit(2)
+    print(mention(sys.argv[1]))

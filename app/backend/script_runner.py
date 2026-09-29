@@ -279,8 +279,19 @@ async def execute_script(user_id: str, code: str, channel: str | None = None, se
         # A script that already posted itself (SLACK_POSTED=1) is skipped here
         # entirely -- posting its own raw stdout on top would double-post the
         # same report as a second, uglier message.
+        #
+        # `send` is also required here (root-caused 2026-09-29): a plain
+        # preview run (no Send toggle) never calls Slack itself, so its stdout
+        # is just printed preview text -- e.g. chu_weekly_report.py's dry-run
+        # output literally prints "--- parent message ---" and "--- N thread
+        # repl(y/ies) ---" followed by each reply's text. Without this check,
+        # this auto-post used to ship that whole preview to Slack as ONE flat
+        # message that only LOOKS like a threaded report (no real thread_ts
+        # anywhere). A real send already threads correctly via the script's
+        # own send_to_slack() and self-reports SLACK_POSTED=1 above -- a
+        # preview should never reach Slack at all.
         already_posted = ok and bool(_SLACK_ALREADY_POSTED_RE.search(stdout_text))
-        slack_error = _post_to_slack(stdout_text, channel) if (ok and not already_posted) else None
+        slack_error = _post_to_slack(stdout_text, channel) if (ok and send and not already_posted) else None
         result = {
             "ok": ok,
             "timed_out": False,

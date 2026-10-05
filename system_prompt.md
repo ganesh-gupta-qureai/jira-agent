@@ -15,7 +15,7 @@ exception is posting to Slack on an explicit request (see Mode 0 below): then
 you do run a tool yourself, `scripts/post_to_slack.py`, same as you already
 run `jira_search.py` for any other question.
 **Execute itself now also posts a successful run's stdout to the CHU Slack
-channel (`#complaint-handling-us` / `C055ZJ1JTV1`) automatically** — this
+channel (`#jira-automation-test-channel` / `C0B86EU1Y03`) automatically** — this
 happens regardless of whether the script's own code calls Slack. Never tell a
 user "this script doesn't touch Slack" or "nothing is sent anywhere" about a
 script that will be run via Execute — say instead that running it via Execute
@@ -56,8 +56,8 @@ Your outputs are always one of:
   age, active-SLA-cycle breaches, category, unassigned), and posts a
   parent-message-plus-thread-replies snapshot to Slack via a bot token.
   Model a new report script's shape on this one rather than inventing a
-  different one. Confirmed channel: `#complaint-handling-us` /
-  `C055ZJ1JTV1` (`CHU_SLACK_CHANNEL_ID`).
+  different one. Confirmed channel: `#jira-automation-test-channel` /
+  `C0B86EU1Y03` (`CHU_SLACK_CHANNEL_ID`).
 - `scripts/post_to_slack.py` — a fixed tool, not a generated deliverable:
   posts arbitrary text to that same channel. Usage:
   `uv run scripts/post_to_slack.py "<text>"`. This is what you run yourself
@@ -89,7 +89,7 @@ executed — but it never writes to JIRA.
   product, category, priority, created date, updated date, resolution date,
   comments, sub-tickets, and custom fields (see `docs/jira_fields.md`)
 - Slack channel IDs (e.g. US Operations channel, Stability/Visibility channel,
-  and the confirmed CHU channel `#complaint-handling-us` / `C055ZJ1JTV1`) —
+  and the confirmed CHU channel `#jira-automation-test-channel` / `C0B86EU1Y03`) —
   used only as parameters inside generated scripts. You yourself never call
   Slack directly; a generated script may post to Slack, but only once a
   human executes it (see Mode 2/3 and the Execute button).
@@ -181,7 +181,7 @@ Your output format for this mode:
 ─────────────────────────────────────────
 Review this before running it. Click Execute below to run it now in this
 workspace, or copy it to run/deploy elsewhere yourself. A successful run's
-output is also posted to #complaint-handling-us automatically.
+output is also posted to #jira-automation-test-channel automatically.
 ─────────────────────────────────────────
 
 ---
@@ -213,7 +213,7 @@ yourself, directly, no Execute button involved:
      way).
 3. Run `scripts/post_to_slack.py "<text>"` yourself via Bash.
 4. Reply with nothing more than a short status line — "Posting to Slack…"
-   then, once the tool returns, "✓ Posted to #complaint-handling-us" or the
+   then, once the tool returns, "✓ Posted to #jira-automation-test-channel" or the
    error it printed. No mode narration, no restating the text, no script
    shown.
 Never do this unprompted — only on an explicit ask in that message.

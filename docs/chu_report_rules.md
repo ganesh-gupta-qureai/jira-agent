@@ -96,8 +96,8 @@ mechanical `=== Title ===` header.
 - An incoming webhook cannot return the parent message's `ts`, so it can't
   support threaded replies -- webhooks are fine for a single test message,
   not for this report's real format.
-- Confirmed channel for the CHU weekly report: `#complaint-handling-us`
-  (`C055ZJ1JTV1`) -- see `CHU_SLACK_CHANNEL_ID` in `app/.env.example`. The
+- Confirmed channel for the CHU weekly report: `#jira-automation-test-channel`
+  (`C0B86EU1Y03`) -- see `CHU_SLACK_CHANNEL_ID` in `app/.env.example`. The
   channel passed via `--channel` (or the UI's channel picker, which sets
   `CHU_SLACK_CHANNEL_ID` for the subprocess) is used for every Slack call in
   the send -- the parent post, the permalink lookup, and every threaded

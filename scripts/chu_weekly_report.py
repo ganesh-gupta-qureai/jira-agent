@@ -21,7 +21,7 @@ Env vars used (see app/.env.example):
     JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN  -- see _jira_client.py
     SLACK_BOT_TOKEN       -- xoxb-... bot token, chat:write scope, invited to
                              the target channel
-    CHU_SLACK_CHANNEL_ID  -- defaults to C055ZJ1JTV1 (#complaint-handling-us)
+    CHU_SLACK_CHANNEL_ID  -- defaults to C0B86EU1Y03 (#jira-automation-test-channel)
 
 Usage:
     uv run scripts/chu_weekly_report.py              # dry run, prints only
@@ -313,7 +313,7 @@ def send_to_slack(channel: str, parent_text: str, thread_replies: list[tuple[str
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help="actually post to Slack (default: dry run, print only)")
-    parser.add_argument("--channel", default=os.environ.get("CHU_SLACK_CHANNEL_ID", "C055ZJ1JTV1"))
+    parser.add_argument("--channel", default=os.environ.get("CHU_SLACK_CHANNEL_ID", "C0B86EU1Y03"))
     args = parser.parse_args()
     # See the module docstring -- the Execute/Schedule buttons can't pass
     # --send as a CLI arg, so CHU_REPORT_SEND=1 is the equivalent trigger.

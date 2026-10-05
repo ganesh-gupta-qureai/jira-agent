@@ -25,6 +25,34 @@ Use these field IDs when building JQL or requesting specific `fields` from
 | `customfield_10033` | Root Cause Analysis - RCA | ADF (Atlassian Document Format) rich text |
 | `customfield_10926` | Correction/Fix Done | ADF rich text |
 
+## What counts as a "linked product ticket"
+
+**A non-empty `issuelinks` list does NOT mean a CHU ticket has a product
+ticket linked.** Confirmed live (2026-10-05, CHU-474): a CHU ticket can have
+a "Relates" link to ANOTHER CHU-board ticket (e.g. a duplicate/related
+Product Feedback ticket on the same board) — that is not a product ticket,
+and checking `issuelinks is not empty` alone will wrongly treat the CHU
+ticket as already linked.
+
+**The real rule: a genuine product ticket link is to an issue in a
+DIFFERENT project than CHU.** Parse the linked issue's key prefix (the part
+before the `-`, e.g. `RET` in `RET-4653`) from `issuelinks[].outwardIssue.key`
+/ `inwardIssue.key`, and only count it as a product ticket link if that
+prefix is not `CHU`. A same-project (`CHU-...`) link should never satisfy a
+"has a product ticket linked" condition.
+
+**Links are mutable and get reassigned during ticket cleanup — don't trust
+the first link you see as permanent.** Real case: CHU-475 was linked to
+`RET-4653` (a genuine product ticket), then that link was removed and
+replaced with a "Relates to CHU-474" link sixteen seconds later, when
+CHU-475 was folded into CHU-474 as a duplicate (see the comment: "have
+linked the original ticket as this is a duplicate, lets close this"). The
+product-ticket reference (`RET-4653`) was lost in that merge — it was never
+re-added to CHU-474. A script checking "does this ticket have a product
+link" needs to re-derive the answer from the CURRENT `issuelinks` state
+every run, not assume a link seen once stays valid, and should treat a
+same-project-only link as still "missing a product ticket," not skip it.
+
 ## API notes
 - The base endpoint for search is `/rest/api/3/search/jql` (POST, JQL in
   body) — the older `/rest/api/3/search` is deprecated (410 Gone).

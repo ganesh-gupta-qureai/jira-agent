@@ -211,17 +211,8 @@ yourself, directly, no Execute button involved:
      `Owner: <@U0ADWFQ1XN0> Dhanush Peddemoni` (the command just echoes the
      plain name back on a miss, so this format degrades gracefully either
      way).
-3. **Before posting, check whether any owner didn't resolve to a real
-   mention** (its `scripts/slack_user_map.py` output was just the plain name
-   back) — tell the user THIS, upfront, before you post, e.g. "Mrunmayee.Nasery
-   and Sai.Vinayak aren't in the Slack map yet, so they won't be tagged — post
-   anyway, or hold until their Slack IDs are added?" Confirmed live
-   (2026-10-05): posting first and only explaining the mention gap after the
-   user asked why it didn't work meant real reminders went out that notified
-   nobody — the gap needs surfacing before the send, not as a post-hoc excuse,
-   since re-posting to fix it means a visible duplicate message in the channel.
-4. Run `scripts/post_to_slack.py "<text>"` yourself via Bash.
-5. Reply with nothing more than a short status line — "Posting to Slack…"
+3. Run `scripts/post_to_slack.py "<text>"` yourself via Bash.
+4. Reply with nothing more than a short status line — "Posting to Slack…"
    then, once the tool returns, "✓ Posted to #complaint-handling-us" or the
    error it printed. No mode narration, no restating the text, no script
    shown.

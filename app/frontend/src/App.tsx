@@ -212,10 +212,36 @@ export default function App() {
 
   return (
     <div className="shell">
+      <nav className="rail">
+        <a className="rail__logo" href="/myapps" title="Back to Hive">
+          ⬢
+        </a>
+        <button
+          className={`rail__item ${view === 'chat' ? 'rail__item--active' : ''}`}
+          onClick={() => setView('chat')}
+          title="Chat"
+        >
+          💬
+        </button>
+        <button
+          className={`rail__item ${view === 'history' ? 'rail__item--active' : ''}`}
+          onClick={() => setView('history')}
+          title="Scripts log"
+        >
+          📜
+        </button>
+        <button
+          className={`rail__item ${view === 'schedules' ? 'rail__item--active' : ''}`}
+          onClick={() => setView('schedules')}
+          title="Scheduled"
+        >
+          ⏰
+        </button>
+      </nav>
+
       <aside className="sidebar">
         <a className="sidebar__head sidebar__back" href="/myapps" title="Back to Hive">
           <span className="back-arrow">←</span>
-          <span className="logo">⬢</span>
           <span className="logo-text">All apps</span>
         </a>
 
@@ -228,26 +254,6 @@ export default function App() {
         <div className="sidebar__section">
           <div className="sidebar__label">Recent chats</div>
           <input className="sidebar__search" placeholder="Search…" />
-          <nav className="sidebar__tabs">
-            <button
-              className={`sidebar__tab ${view === 'chat' ? 'sidebar__tab--active' : ''}`}
-              onClick={() => setView('chat')}
-            >
-              <span className="sidebar__tab-icon">💬</span> Chat
-            </button>
-            <button
-              className={`sidebar__tab ${view === 'history' ? 'sidebar__tab--active' : ''}`}
-              onClick={() => setView('history')}
-            >
-              <span className="sidebar__tab-icon">📜</span> Scripts log
-            </button>
-            <button
-              className={`sidebar__tab ${view === 'schedules' ? 'sidebar__tab--active' : ''}`}
-              onClick={() => setView('schedules')}
-            >
-              <span className="sidebar__tab-icon">⏰</span> Scheduled
-            </button>
-          </nav>
         </div>
 
         <ProjectsPanel selectedProjectId={selectedProjectId} onSelectProject={setSelectedProjectId} />

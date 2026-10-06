@@ -1,7 +1,7 @@
 /* ---------- shell ---------- */
 .shell {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 56px 280px 1fr;
   /* minmax(0, 1fr), not a bare 1fr -- a bare 1fr still respects the row's
      automatic minimum size (its content's natural height), so a long code
      block in .chat could still grow this row past 100vh. minmax(0, ...)
@@ -35,6 +35,46 @@
   opacity: 0.75;
 }
 
+/* ---------- rail ----------
+   Thin icon-only strip, a tone lighter than the wider panel next to it --
+   same structural pattern Codex uses (a quiet rail with a hairline seam
+   against the panel), built from this app's own existing color tokens
+   rather than Codex's literal hex values (the ask was to look/feel like
+   it, keeping our palette -- see the 2026-10-06 UI pass). */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0;
+  background: var(--bg-tertiary);
+  border-right: 1px solid var(--border-default);
+  position: relative;
+  z-index: 2;
+}
+.rail__logo {
+  color: var(--accent);
+  font-size: 20px;
+  text-decoration: none;
+  margin-bottom: 10px;
+  line-height: 1;
+}
+.rail__item {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  font-size: 16px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.rail__item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.rail__item--active { background: var(--bg-secondary); color: var(--accent); }
+
 /* ---------- sidebar ---------- */
 .sidebar {
   display: flex;
@@ -64,13 +104,11 @@ a.sidebar__back:active {
 }
 a.sidebar__back > * { color: inherit; }
 a.sidebar__back:hover { background: var(--bg-hover); }
-a.sidebar__back .logo { color: var(--accent); }
 a.sidebar__back .back-arrow {
   color: var(--text-muted);
   font-size: 14px;
   margin-right: 2px;
 }
-.logo { color: var(--accent); font-size: 18px; }
 .logo-text { font-weight: 700; font-size: 15px; }
 
 .sidebar__actions {
@@ -133,34 +171,6 @@ a.sidebar__back .back-arrow {
 }
 .sidebar__search::placeholder { color: var(--text-placeholder); }
 .sidebar__search:focus { border-color: var(--border-focus); }
-.sidebar__tabs {
-  display: flex;
-  gap: 4px;
-  margin-top: 8px;
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 3px;
-}
-.sidebar__tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  background: transparent;
-  border: 0;
-  padding: 6px 8px;
-  border-radius: 7px;
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background 120ms, color 120ms;
-}
-.sidebar__tab-icon { font-size: 12px; }
-.sidebar__tab:hover { color: var(--text-primary); }
-.sidebar__tab--active { background: var(--bg-secondary); color: var(--accent); }
 
 .sidebar__list {
   flex: 1;
@@ -617,7 +627,7 @@ a.sidebar__back .back-arrow {
   background: rgba(20, 20, 20, 0.6);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(56, 132, 255, 0.22);
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow: var(--accent-glow);
   transition: border-color 120ms, box-shadow 120ms;
 }

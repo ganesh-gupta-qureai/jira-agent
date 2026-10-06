@@ -1,4 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Inter -- the standard open-licensed stand-in for OpenAI's actual Codex/
+   ChatGPT typeface ("OpenAI Sans", and Söhne before it): OpenAI has never
+   published a download or public license for either, so neither can
+   actually be used here. Inter is the same grotesque/humanist family shape
+   (neutral, built for small UI sizes) and is what most Codex-UI clones use
+   for exactly that reason -- see the 2026-10-06 UI pass this was built for. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
   /* Backgrounds */
@@ -32,7 +38,7 @@
   --danger: #ef4444;
 
   /* Fonts */
-  --font-sans: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 

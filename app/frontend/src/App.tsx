@@ -5,7 +5,7 @@ import { apiUrl } from './api'
 import { subscribeAGUI } from './agui_sync'
 import type { AGUIEvent } from './agui_sync'
 import { applyEvent, initialChatState, type TimelineItem } from './chat'
-import { fetchConversations } from './conversationsApi'
+import { fetchConversations, moveConversationToProject } from './conversationsApi'
 import ExecutionHistory from './ExecutionHistory'
 import { formatAgo } from './formatAgo'
 import Honeycomb from './Honeycomb'
@@ -13,6 +13,9 @@ import LoadingDots from './LoadingDots'
 import Login from './Login'
 import { Markdown } from './Markdown'
 import { PostToSlackButton } from './PostToSlack'
+import ProjectsPanel from './ProjectsPanel'
+import { fetchProjects } from './projectsApi'
+import SavedScriptsPanel from './SavedScriptsPanel'
 import ScheduledJobs from './ScheduledJobs'
 import { renderToolBody } from './tools/registry'
 import './App.css'
@@ -45,8 +48,13 @@ export default function App() {
   const [threadId, setThreadId] = useState<string | null>(() => readUrl().thread)
   const [sessionId, setSessionId] = useState<string | null>(() => readUrl().session)
   const [view, setView] = useState<View>('chat')
+  // Selected in the sidebar's Projects section: filters the Recents list to
+  // that project's chats, and a NEW chat started while one is selected gets
+  // assigned to it (see sendMessage's project_id).
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [state, setState] = useState(initialChatState)
   const [draft, setDraft] = useState('')
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -58,6 +66,20 @@ export default function App() {
     queryFn: fetchConversations,
     enabled: !!auth?.loggedIn,
   })
+  const { data: projectList = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+    enabled: !!auth?.loggedIn,
+  })
+  const visibleConversations = selectedProjectId
+    ? conversations.filter((c) => c.project_id === selectedProjectId)
+    : conversations
+
+  async function moveToProject(sessionIdToMove: string, projectId: string | null) {
+    await moveConversationToProject(sessionIdToMove, projectId)
+    queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    queryClient.invalidateQueries({ queryKey: ['projects'] })
+  }
 
   const refreshAuth = useCallback(async () => {
     try {
@@ -118,6 +140,12 @@ export default function App() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [state.items])
 
+  // Programmatic draft clears (newChat, after send) don't fire the textarea's
+  // onChange, so its grown height would otherwise stick at whatever it was.
+  function resetComposerHeight() {
+    if (composerRef.current) composerRef.current.style.height = 'auto'
+  }
+
   function newChat() {
     const t = crypto.randomUUID()
     setThreadId(t)
@@ -125,6 +153,7 @@ export default function App() {
     writeUrl(t, null)
     setState(initialChatState)
     setDraft('')
+    resetComposerHeight()
   }
 
   // Open a past conversation: thread_id == its session_id; the backend seeds the
@@ -154,13 +183,17 @@ export default function App() {
     const text = raw.trim()
     if (!text || state.running || !threadId) return
     setState((s) => ({ ...s, running: true, error: null })) // optimistic; the SSE confirms
-    trigger('/api/chat', { message: text })
+    // project_id only matters to the backend on a brand-new chat's first
+    // turn (sessionId null) -- an already-resumed chat's assignment already
+    // lives in storage, see main.py's run_turn.
+    trigger('/api/chat', { message: text, project_id: sessionId ? undefined : selectedProjectId })
   }
 
   function send() {
     if (!draft.trim() || state.running) return
     const text = draft
     setDraft('')
+    resetComposerHeight()
     sendMessage(text)
   }
 
@@ -200,38 +233,64 @@ export default function App() {
               className={`sidebar__tab ${view === 'chat' ? 'sidebar__tab--active' : ''}`}
               onClick={() => setView('chat')}
             >
-              Chat
+              <span className="sidebar__tab-icon">💬</span> Chat
             </button>
             <button
               className={`sidebar__tab ${view === 'history' ? 'sidebar__tab--active' : ''}`}
               onClick={() => setView('history')}
             >
-              Scripts log
+              <span className="sidebar__tab-icon">📜</span> Scripts log
             </button>
             <button
               className={`sidebar__tab ${view === 'schedules' ? 'sidebar__tab--active' : ''}`}
               onClick={() => setView('schedules')}
             >
-              Scheduled
+              <span className="sidebar__tab-icon">⏰</span> Scheduled
             </button>
           </nav>
         </div>
 
+        <ProjectsPanel selectedProjectId={selectedProjectId} onSelectProject={setSelectedProjectId} />
+
         <nav className="sidebar__list">
-          {conversations.length === 0 && (
-            <div className="sidebar__empty">No conversations yet</div>
+          {visibleConversations.length === 0 && (
+            <div className="sidebar__empty">
+              {selectedProjectId ? 'No chats in this project yet' : 'No conversations yet'}
+            </div>
           )}
-          {conversations.map((c) => (
-            <button
-              key={c.session_id}
-              className={`recent ${c.session_id === sessionId ? 'recent--active' : ''}`}
-              onClick={() => openConversation(c.session_id)}
-              title={c.title}
-            >
-              <div className="recent__title">{c.title}</div>
-              <div className="recent__when">{formatAgo(c.updated_at * 1000)}</div>
-            </button>
-          ))}
+          {visibleConversations.map((c) => {
+            const project = projectList.find((p) => p.id === c.project_id)
+            return (
+              <div key={c.session_id} className="recent-row">
+                <button
+                  className={`recent ${c.session_id === sessionId ? 'recent--active' : ''}`}
+                  onClick={() => openConversation(c.session_id)}
+                  title={c.title}
+                >
+                  <div className="recent__title">
+                    <span>{c.title}</span>
+                    {project && <span className="recent__project-tag">{project.name}</span>}
+                  </div>
+                  <div className="recent__when">{formatAgo(c.updated_at * 1000)}</div>
+                </button>
+                {projectList.length > 0 && (
+                  <select
+                    className="recent__move"
+                    value={c.project_id ?? ''}
+                    onChange={(e) => moveToProject(c.session_id, e.target.value || null)}
+                    title="Move to project"
+                  >
+                    <option value="">No project</option>
+                    {projectList.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )
+          })}
         </nav>
 
         <div className="sidebar__foot">
@@ -247,6 +306,7 @@ export default function App() {
         <header className="topbar">
           <div className="topbar__title">JIRA Agent</div>
           <div className="topbar__icons">
+            <SavedScriptsPanel threadId={threadId} />
             <button className="icon-btn" title="Settings">⚙</button>
             <button className="icon-btn" title="Theme">☀</button>
             <div className="avatar avatar--sm">{initials}</div>
@@ -262,7 +322,8 @@ export default function App() {
         <div className="chat" ref={scrollRef}>
           {state.items.length === 0 && !state.running && (
             <div className="empty">
-              <div className="empty__title">How can I help?</div>
+              <div className="empty__logo">⬢</div>
+              <div className="empty__title">What should we look into?</div>
               <div className="empty__sub">
                 Ask about tickets, generate a report script, or draft a scheduled digest — all read-only.
               </div>
@@ -291,6 +352,7 @@ export default function App() {
                   item={item}
                   onAnswer={state.running ? undefined : answerQuestions}
                   isFinalAnswer={isFinalAgentAnswer(state.items, index, state.running)}
+                  threadId={threadId}
                 />
               </motion.div>
             ))}
@@ -336,8 +398,18 @@ export default function App() {
         >
           <div className="composer__wrap">
             <textarea
+              ref={composerRef}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                // Auto-grow with content (like ChatGPT/Claude's composer) up to
+                // the CSS max-height cap, then it scrolls internally instead of
+                // growing further. Reset to 'auto' first so deleting text
+                // shrinks it back down, not just growing monotonically.
+                const el = e.target
+                el.style.height = 'auto'
+                el.style.height = `${el.scrollHeight}px`
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
@@ -392,9 +464,11 @@ function isFinalAgentAnswer(items: TimelineItem[], index: number, running: boole
 function AssistantText({
   item,
   isFinalAnswer,
+  threadId,
 }: {
   item: Extract<TimelineItem, { kind: 'assistant_text' }>
   isFinalAnswer: boolean
+  threadId: string | null
 }) {
   const fullText = item.segments.join('')
   return (
@@ -403,7 +477,7 @@ function AssistantText({
       <div className="msg__body">
         <div className="msg__label">JIRA Agent</div>
         <div className="msg__prose">
-          <Markdown>{fullText}</Markdown>
+          <Markdown threadId={threadId}>{fullText}</Markdown>
           {!item.done && <span className="cursor">▍</span>}
         </div>
         {isFinalAnswer && fullText.trim() && (
@@ -422,10 +496,12 @@ function Item({
   item,
   onAnswer,
   isFinalAnswer,
+  threadId,
 }: {
   item: TimelineItem
   onAnswer?: AnswerFn
   isFinalAnswer: boolean
+  threadId: string | null
 }) {
   if (item.kind === 'user') {
     return (
@@ -435,7 +511,7 @@ function Item({
     )
   }
   if (item.kind === 'assistant_text') {
-    return <AssistantText item={item} isFinalAnswer={isFinalAnswer} />
+    return <AssistantText item={item} isFinalAnswer={isFinalAnswer} threadId={threadId} />
   }
   return <ToolCard item={item} onAnswer={onAnswer} />
 }

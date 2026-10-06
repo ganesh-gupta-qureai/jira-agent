@@ -141,6 +141,52 @@ def _to_slack_mrkdwn(body: str) -> str:
     return _convert_tables(body)
 
 
+def _split_entries(text: str) -> list[str]:
+    """Blank-line-separated blocks -- the long-output threading rule (below)
+    treats each one as one "entry" (e.g. one ticket's block in a report)."""
+    return [b.strip() for b in text.split("\n\n") if b.strip()]
+
+
+def _looks_like_headline(entry: str) -> bool:
+    """True for a short intro/greeting line (e.g. "Product ticket missing
+    for..."), false for something that looks like a data entry (a Slack
+    link, or a bulleted line) -- used to decide whether entries[0] is a
+    summary line to reuse, or just the first of many entries."""
+    return len(entry) < 250 and "<http" not in entry and not entry.lstrip().startswith(("-", "*", "•"))
+
+
+def _chunk_entries(entries: list[str], max_chars: int = 2800) -> list[str]:
+    """Group entries into reply-sized chunks (never splitting one entry
+    across two replies) so a long list doesn't need one Slack call per item."""
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for entry in entries:
+        entry_len = len(entry) + 2
+        if current and current_len + entry_len > max_chars:
+            chunks.append("\n\n".join(current))
+            current, current_len = [], 0
+        current.append(entry)
+        current_len += entry_len
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks
+
+
+def _slack_post_message(token: str, channel: str, text: str, thread_ts: str | None = None) -> dict:
+    payload: dict = {"channel": channel, "text": text, "mrkdwn": True}
+    if thread_ts:
+        payload["thread_ts"] = thread_ts
+    request = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8", errors="replace"))
+
+
 def _post_to_slack(stdout: str, channel: str | None) -> str | None:
     """Post a successful run's output to a Slack channel -- ONLY the
     explicit, human-chosen `channel` (from the UI's channel picker, stored
@@ -154,7 +200,13 @@ def _post_to_slack(stdout: str, channel: str | None) -> str | None:
     with no channel fell through to that env var, which was set to the
     real production channel -- two Slack posts landed in #us-operations
     that were meant for testing). A run with no explicit channel now simply
-    doesn't auto-post, rather than silently guessing at a channel."""
+    doesn't auto-post, rather than silently guessing at a channel.
+
+    Long-output rule (2026-10-06): more than 10 entries (blank-line-separated
+    blocks) or 3000+ chars always becomes a short summary message with the
+    entries posted as thread replies instead -- never one giant flat message
+    a human has to scroll through. Falls back to the old truncated single
+    message only when there's no blank-line structure to split on at all."""
     token = os.environ.get("SLACK_BOT_TOKEN", "")
     if not channel:
         return "no channel selected -- refusing to guess (see script_runner.py's _post_to_slack)"
@@ -162,9 +214,6 @@ def _post_to_slack(stdout: str, channel: str | None) -> str | None:
         return "SLACK_BOT_TOKEN is not set -- see app/.env.example"
 
     body = stdout.strip() or "(script ran successfully, no output)"
-    truncated = len(body) > SLACK_MESSAGE_MAX_CHARS
-    if truncated:
-        body = body[:SLACK_MESSAGE_MAX_CHARS] + "\n... (truncated, see full output in the chat)"
     # No code fence, no added "Executed script result:" label -- a fenced
     # block renders as a flat monospace dump with none of Slack's own mrkdwn
     # (bold, bullets) applied inside it, and a mechanical label reads like a
@@ -172,17 +221,34 @@ def _post_to_slack(stdout: str, channel: str | None) -> str | None:
     # script printed (see system_prompt.md's instruction that a script
     # meant for Slack should open with its own natural greeting line).
     text = _to_slack_mrkdwn(body)
+    entries = _split_entries(text)
 
-    payload = json.dumps({"channel": channel, "text": text, "mrkdwn": True}).encode("utf-8")
-    request = urllib.request.Request(
-        "https://slack.com/api/chat.postMessage",
-        data=payload,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"},
-        method="POST",
-    )
+    if (len(entries) > 10 or len(text) > SLACK_MESSAGE_MAX_CHARS) and len(entries) > 1:
+        headline, items = (
+            (entries[0], entries[1:]) if _looks_like_headline(entries[0]) else (None, entries)
+        )
+        summary = f"{headline}\n({len(items)} item(s) — see thread)" if headline else f"{len(items)} item(s) below:"
+        try:
+            parent = _slack_post_message(token, channel, summary)
+        except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+            return f"Slack request failed: {exc}"
+        if not parent.get("ok"):
+            return f"Slack API error: {parent.get('error', 'unknown_error')}"
+        thread_ts = parent.get("ts")
+        for chunk in _chunk_entries(items):
+            time.sleep(1.0)  # avoid Slack's per-channel rate limit
+            try:
+                reply = _slack_post_message(token, channel, chunk, thread_ts=thread_ts)
+            except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+                return f"Slack request failed mid-thread: {exc}"
+            if not reply.get("ok"):
+                return f"Slack API error mid-thread: {reply.get('error', 'unknown_error')}"
+        return None
+
+    if len(text) > SLACK_MESSAGE_MAX_CHARS:
+        text = text[:SLACK_MESSAGE_MAX_CHARS] + "\n... (truncated, see full output in the chat)"
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            result = json.loads(response.read().decode("utf-8", errors="replace"))
+        result = _slack_post_message(token, channel, text)
     except (urllib.error.HTTPError, urllib.error.URLError) as exc:
         return f"Slack request failed: {exc}"
     if not result.get("ok"):

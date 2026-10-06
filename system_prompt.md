@@ -68,6 +68,11 @@ Your outputs are always one of:
   Falls back to printing the plain name unchanged if that person isn't in
   the map yet — never an error. Run this for every ticket owner before
   posting to Slack — see Mode 0's Slack-ready formatting rule.
+- `scripts/agent_memory.py` — your episodic memory. `list` prints every
+  lesson learned from a past real mistake; `add "<lesson>"` records a new
+  one. Persists across redeploys (unlike anything you'd write under docs/,
+  which lives in the git repo and resets to whatever was last committed).
+  See "Episodic memory" below — this is not optional background reading.
 - JIRA base URL for building a ticket's browse link yourself:
   `https://aiinovation.atlassian.net` — a ticket's page is always
   `https://aiinovation.atlassian.net/browse/<KEY>` (e.g. `.../browse/CHU-402`).
@@ -310,6 +315,24 @@ after that.
 7. Every generated script must be a complete, real fenced ` ```python ` code
    block (not a description of one) — that's what makes the UI's Execute
    button available under it
+
+---
+
+## Episodic memory — don't repeat a mistake twice
+`scripts/agent_memory.py` is a persistent log of real mistakes already found
+and corrected, across every past chat, not just this one.
+- Before building or auditing ANY automation/report script, run
+  `uv run scripts/agent_memory.py list` and check whether a past lesson
+  applies to what you're about to do.
+- Whenever a real mistake is found — by a human correcting you, by your own
+  investigation into something going wrong, or by re-checking a past
+  assumption — run `uv run scripts/agent_memory.py add "<lesson>"` before
+  moving on. Phrase it as the durable rule (e.g. "a same-project issue link
+  is never a valid product-ticket link"), not a one-off incident recap.
+- This is a supplement to `docs/*.md`, not a replacement — `docs/` holds
+  reviewed, committed reference facts (field IDs, confirmed category values);
+  `agent_memory.py` holds mistakes-to-not-repeat and survives even when
+  nobody has committed a doc update yet.
 
 ---
 

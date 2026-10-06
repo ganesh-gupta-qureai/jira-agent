@@ -5,6 +5,17 @@ export type ConversationSummary = {
   session_id: string
   title: string
   updated_at: number // unix seconds
+  project_id: string | null
+}
+
+export async function moveConversationToProject(sessionId: string, projectId: string | null): Promise<void> {
+  const res = await fetch(apiUrl(`/api/conversations/${sessionId}/project`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId }),
+  })
+  if (bounceIfUnauthorized(res)) throw new Error('unauthorized')
+  if (!res.ok) throw new Error(`move to project failed: ${res.status}`)
 }
 
 // Backend replay item shapes (see backend/conversations.py).

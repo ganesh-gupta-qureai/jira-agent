@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { apiUrl, bounceIfUnauthorized } from './api'
 import { createCronJob } from './cronJobsApi'
+import { saveScript } from './savedScriptsApi'
 import { ScheduleForm, type ScheduleValues } from './ScheduleForm'
 import { DEFAULT_SLACK_CHANNEL, PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } from './slackChannels'
 
@@ -9,15 +10,18 @@ import { DEFAULT_SLACK_CHANNEL, PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } fr
 // unordered/ordered lists, blockquotes, and inline spans (bold, italic,
 // inline code, links). Not a spec-complete parser — just enough to read well.
 
-type Props = { children: string }
+// threadId is optional and only used to scope a CodeBlock's "Save" button
+// (see SavedScriptsPanel) -- Markdown is used in a couple of places with no
+// chat context at all, where that button just doesn't render.
+type Props = { children: string; threadId?: string | null }
 
-export function Markdown({ children }: Props) {
-  return <>{renderBlocks(children ?? '')}</>
+export function Markdown({ children, threadId }: Props) {
+  return <>{renderBlocks(children ?? '', threadId)}</>
 }
 
 // --- block level ----------------------------------------------------------
 
-function renderBlocks(src: string): ReactNode[] {
+function renderBlocks(src: string, threadId?: string | null): ReactNode[] {
   const lines = src.replace(/\r\n/g, '\n').split('\n')
   const out: ReactNode[] = []
   let i = 0
@@ -36,7 +40,7 @@ function renderBlocks(src: string): ReactNode[] {
         i++
       }
       i++ // skip closing fence
-      out.push(<CodeBlock key={key++} lang={fence[1]} code={body.join('\n')} />)
+      out.push(<CodeBlock key={key++} lang={fence[1]} code={body.join('\n')} threadId={threadId} />)
       continue
     }
 
@@ -63,7 +67,7 @@ function renderBlocks(src: string): ReactNode[] {
       }
       out.push(
         <blockquote key={key++} className="md-quote">
-          {renderBlocks(quote.join('\n'))}
+          {renderBlocks(quote.join('\n'), threadId)}
         </blockquote>,
       )
       continue
@@ -200,7 +204,7 @@ type ExecuteResult = {
 // how to `uv run` a .py file (see script_runner.py).
 const EXECUTABLE_LANGS = new Set(['python', 'py'])
 
-function CodeBlock({ lang, code }: { lang: string; code: string }) {
+function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threadId?: string | null }) {
   const hasLang = lang.trim().length > 0
   const langLower = lang.toLowerCase()
   const ext = EXT_BY_LANG[langLower] ?? 'txt'
@@ -209,6 +213,21 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<ExecuteResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Save-for-later -- explicitly NOT a way to run this script, just keeps a
+  // copy pinned to this chat's SavedScriptsPanel (top-right of the topbar).
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  async function save() {
+    if (!threadId || saveStatus === 'saving') return
+    setSaveStatus('saving')
+    try {
+      const firstLine = code.trim().split('\n')[0]?.replace(/^#\s*/, '').slice(0, 60) || 'Saved script'
+      await saveScript(threadId, code, firstLine)
+      setSaveStatus('saved')
+    } catch {
+      setSaveStatus('idle')
+    }
+  }
 
   const [schedOpen, setSchedOpen] = useState(false)
   const [schedBusy, setSchedBusy] = useState(false)
@@ -324,6 +343,16 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
             <button className="md-codeblock__download" onClick={download} title="Download as a file">
               ↓ Download
             </button>
+            {threadId && (
+              <button
+                className="md-codeblock__download"
+                onClick={save}
+                disabled={saveStatus === 'saving'}
+                title="Save this script to this chat's Saved scripts panel (does not run it)"
+              >
+                {saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'saving' ? 'Saving…' : '💾 Save'}
+              </button>
+            )}
             {executable && !schedDone && (
               <button
                 className="md-codeblock__download"

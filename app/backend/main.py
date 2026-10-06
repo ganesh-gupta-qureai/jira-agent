@@ -34,7 +34,9 @@ import cron_jobs
 import cron_scheduler
 from execution_history import clear_executions, delete_execution, list_executions
 from langfuse_emit import emit_turn
+import projects
 from runlog import get_runlog
+import saved_scripts
 from script_runner import PRODUCTION_SLACK_CHANNEL_ID, execute_script
 
 
@@ -119,6 +121,11 @@ class ChatRequest(BaseModel):
     thread_id: str
     # The claude session to resume (set when reopening an existing conversation).
     session_id: str | None = None
+    # Set only when starting a brand-new chat from inside a project (the
+    # project's instructions/docs get attached once the real session_id is
+    # known -- see run_turn's on_session). Ignored on a resumed chat; that
+    # chat's project assignment (if any) is looked up from storage instead.
+    project_id: str | None = None
 
 
 class AnswerRequest(BaseModel):
@@ -219,7 +226,9 @@ async def _traced(events: AsyncIterator[dict], trace: _TurnTrace) -> AsyncIterat
         yield ev
 
 
-async def run_turn(user: str, thread_id: str, message: str, *, answer_file: str | None = None) -> None:
+async def run_turn(
+    user: str, thread_id: str, message: str, *, answer_file: str | None = None, project_id: str | None = None
+) -> None:
     """Drive one turn as a background task: fold AG-UI events into the log
     (agui_sync.drive_turn handles running-state, terminal events, reaping), keep
     the Langfuse trace + session-id persistence, then drain the queued message."""
@@ -228,13 +237,24 @@ async def run_turn(user: str, thread_id: str, message: str, *, answer_file: str 
     resume = getattr(log, "session_id", None)
     trace = _TurnTrace(user, resume, message or "(answer)")
 
+    # A resumed chat's project assignment (if any) lives in storage, keyed by
+    # the real session_id. A brand-new chat has no session_id yet -- project_id
+    # (passed explicitly from the "start chat in this project" UI action) is
+    # what tells us to attach it once on_session below learns the real id.
+    active_project_id = project_id or projects.get_chat_project_id(user, resume)
+    prompt = message
+    if active_project_id:
+        prompt = projects.build_context_block(user, active_project_id) + message
+
     def on_session(sid: str) -> None:
         if sid:
             log.session_id = sid
+            if project_id and not resume:
+                projects.assign_chat(user, sid, project_id)
 
     events = _traced(
         translate(
-            run_claude(message, user_id=user, session_id=resume, answer_file=answer_file),
+            run_claude(prompt, user_id=user, session_id=resume, answer_file=answer_file),
             thread_id=resume or thread_id,
             run_id=run_id,
         ),
@@ -263,7 +283,7 @@ async def chat(req: ChatRequest, user: str = Depends(current_user)) -> dict:
     if log.running:
         log.queue.append(req.message)
         return {"queued": True}
-    log.task = asyncio.create_task(run_turn(user, req.thread_id, req.message))
+    log.task = asyncio.create_task(run_turn(user, req.thread_id, req.message, project_id=req.project_id))
     return {"ok": True}
 
 
@@ -382,8 +402,13 @@ async def delete_cron_job_route(job_id: str, user: str = Depends(current_user)) 
 
 @router.get("/api/conversations")
 async def conversations(user: str = Depends(current_user)) -> list[dict]:
-    """The user's past conversations (the inbox/recents list), newest first."""
-    return list_conversations(user)
+    """The user's past conversations (the inbox/recents list), newest first,
+    each annotated with its project_id (None if not in a project)."""
+    convos = list_conversations(user)
+    chat_project = projects.chat_project_map(user)
+    for c in convos:
+        c["project_id"] = chat_project.get(c["session_id"])
+    return convos
 
 
 @router.get("/api/conversations/{session_id}")
@@ -393,6 +418,108 @@ async def conversation(session_id: str, user: str = Depends(current_user)) -> di
     if items is None:
         raise HTTPException(status_code=404, detail="conversation not found")
     return {"session_id": session_id, "items": items}
+
+
+class AssignProjectRequest(BaseModel):
+    project_id: str | None = None  # None moves the chat out of any project
+
+
+@router.post("/api/conversations/{session_id}/project")
+async def assign_conversation_project(
+    session_id: str, req: AssignProjectRequest, user: str = Depends(current_user)
+) -> dict:
+    """Move an existing chat into a project, or out of one (project_id=None)."""
+    if req.project_id and not projects.get_project(user, req.project_id):
+        raise HTTPException(status_code=404, detail="project not found")
+    projects.assign_chat(user, session_id, req.project_id)
+    return {"ok": True}
+
+
+# --- Project spaces ---------------------------------------------------------
+
+class CreateProjectRequest(BaseModel):
+    name: str
+    instructions: str = ""
+
+
+class UpdateProjectRequest(BaseModel):
+    name: str | None = None
+    instructions: str | None = None
+
+
+class AddProjectDocRequest(BaseModel):
+    title: str
+    content: str
+
+
+@router.get("/api/projects")
+async def get_projects(user: str = Depends(current_user)) -> list[dict]:
+    return projects.list_projects(user)
+
+
+@router.post("/api/projects")
+async def post_project(req: CreateProjectRequest, user: str = Depends(current_user)) -> dict:
+    return projects.create_project(user, req.name, req.instructions)
+
+
+@router.patch("/api/projects/{project_id}")
+async def patch_project(project_id: str, req: UpdateProjectRequest, user: str = Depends(current_user)) -> dict:
+    project = projects.update_project(user, project_id, req.name, req.instructions)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    return project
+
+
+@router.delete("/api/projects/{project_id}")
+async def delete_project_route(project_id: str, user: str = Depends(current_user)) -> dict:
+    if not projects.delete_project(user, project_id):
+        raise HTTPException(status_code=404, detail="project not found")
+    return {"ok": True}
+
+
+@router.get("/api/projects/{project_id}/docs")
+async def get_project_docs(project_id: str, user: str = Depends(current_user)) -> list[dict]:
+    return projects.list_docs(user, project_id)
+
+
+@router.post("/api/projects/{project_id}/docs")
+async def post_project_doc(project_id: str, req: AddProjectDocRequest, user: str = Depends(current_user)) -> dict:
+    if not projects.get_project(user, project_id):
+        raise HTTPException(status_code=404, detail="project not found")
+    return projects.add_doc(user, project_id, req.title, req.content)
+
+
+@router.delete("/api/projects/{project_id}/docs/{doc_id}")
+async def delete_project_doc(project_id: str, doc_id: str, user: str = Depends(current_user)) -> dict:
+    if not projects.delete_doc(user, project_id, doc_id):
+        raise HTTPException(status_code=404, detail="doc not found")
+    return {"ok": True}
+
+
+# --- Saved scripts (per-chat, view-only -- never executed from here) -------
+
+class SaveScriptRequest(BaseModel):
+    thread_id: str
+    code: str
+    title: str = ""
+
+
+@router.get("/api/saved-scripts")
+async def get_saved_scripts(thread_id: str, user: str = Depends(current_user)) -> list[dict]:
+    return saved_scripts.list_saved(user, thread_id)
+
+
+@router.post("/api/saved-scripts")
+async def post_saved_script(req: SaveScriptRequest, user: str = Depends(current_user)) -> dict:
+    title = req.title or (req.code.strip().splitlines()[0][:60] if req.code.strip() else "Untitled script")
+    return saved_scripts.add_saved(user, req.thread_id, req.code, title)
+
+
+@router.delete("/api/saved-scripts/{saved_id}")
+async def delete_saved_script(saved_id: str, user: str = Depends(current_user)) -> dict:
+    if not saved_scripts.delete_saved(user, saved_id):
+        raise HTTPException(status_code=404, detail="saved script not found")
+    return {"ok": True}
 
 
 app.include_router(router, prefix=APP_PREFIX)

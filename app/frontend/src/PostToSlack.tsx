@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { apiUrl, bounceIfUnauthorized } from './api'
+import { DEFAULT_SLACK_CHANNEL, PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } from './slackChannels'
 
 // Generic "post this answer to Slack" affordance for ANY agent reply, not
 // just a generated script. Reuses the exact same /api/execute-script path a
@@ -9,6 +10,16 @@ import { apiUrl, bounceIfUnauthorized } from './api'
 // string literal too (both share \", \\, \n, \r, \t, \uXXXX escaping), so the
 // Scripts log shows real, readable Python -- not a base64 blob -- while still
 // being immune to quote/backtick/triple-quote characters in the answer text.
+//
+// Root-caused 2026-10-06 (Shamil): this button silently did nothing on click
+// -- it never sent `channel` or `send`, so script_runner.py's execute_script
+// skipped the post entirely (send=False) while still reporting ok=true,
+// which read as success. He had to fall back to typing "send it" in chat
+// (Mode 0's post_to_slack.py -- no channel picker, no confirmation at all)
+// to get anything posted. Fix: give this button the SAME channel picker +
+// confirmed_production flow CodeBlock's Execute button already has, and
+// always set send=true -- unlike Execute, there's no "preview" concept for
+// a plain chat answer, clicking this button always means "actually post it."
 type PostResult = {
   ok: boolean
   timed_out: boolean
@@ -34,9 +45,16 @@ function SlackIcon() {
 export function PostToSlackButton({ text }: { text: string }) {
   const [status, setStatus] = useState<'idle' | 'posting' | 'ok' | 'error'>('idle')
   const [message, setMessage] = useState<string | null>(null)
+  const [channel, setChannel] = useState<string>(DEFAULT_SLACK_CHANNEL)
 
   async function post() {
     if (status === 'posting') return
+    if (channel === PRODUCTION_SLACK_CHANNEL_ID) {
+      const ok = window.confirm(
+        'This will send a REAL message to #complaint-handling-us (production), not a test channel. Continue?',
+      )
+      if (!ok) return
+    }
     setStatus('posting')
     setMessage(null)
     try {
@@ -44,7 +62,12 @@ export function PostToSlackButton({ text }: { text: string }) {
       const res = await fetch(apiUrl('/api/execute-script'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({
+          code,
+          channel,
+          send: true,
+          confirmed_production: channel === PRODUCTION_SLACK_CHANNEL_ID,
+        }),
       })
       if (bounceIfUnauthorized(res)) return
       if (!res.ok) {
@@ -66,11 +89,24 @@ export function PostToSlackButton({ text }: { text: string }) {
 
   return (
     <div className="slack-post">
+      <select
+        className="slack-post__channel"
+        value={channel}
+        onChange={(e) => setChannel(e.target.value)}
+        disabled={status === 'posting'}
+        title="Slack channel to post this answer to"
+      >
+        {SLACK_CHANNELS.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.label}
+          </option>
+        ))}
+      </select>
       <button
         className={`slack-post__btn slack-post__btn--${status}`}
         onClick={post}
         disabled={status === 'posting'}
-        title="Post this answer to the CHU Slack channel now"
+        title="Post this answer to the selected Slack channel now"
       >
         <SlackIcon />
         {status === 'posting' ? 'Posting…' : status === 'ok' ? '✓ Posted to Slack' : 'Post to Slack'}

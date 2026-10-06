@@ -11,10 +11,12 @@ both paths read the same regardless of which one posted.
 
 Usage:
   uv run scripts/post_to_slack.py "<text>"
+  uv run scripts/post_to_slack.py --channel C0B86EU1Y03 "<text>"
   printf '%s' "<text>" | uv run scripts/post_to_slack.py -
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -99,9 +101,9 @@ def _to_slack_mrkdwn(body: str) -> str:
     return _convert_tables(body)
 
 
-def post(text: str) -> None:
+def post(text: str, channel: str | None = None) -> None:
     token = os.environ.get("SLACK_BOT_TOKEN", "")
-    channel = os.environ.get("CHU_SLACK_CHANNEL_ID", "")
+    channel = channel or os.environ.get("CHU_SLACK_CHANNEL_ID", "")
     if not token or not channel:
         print("ERROR: SLACK_BOT_TOKEN or CHU_SLACK_CHANNEL_ID is not set -- see app/.env.example", file=sys.stderr)
         sys.exit(1)
@@ -130,11 +132,17 @@ def post(text: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print('usage: post_to_slack.py "<text>"   (or "-" to read stdin)', file=sys.stderr)
-        sys.exit(2)
-    text = sys.stdin.read() if sys.argv[1] == "-" else sys.argv[1]
-    post(text)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("text", help='text to post, or "-" to read stdin')
+    parser.add_argument(
+        "--channel",
+        default=None,
+        help="Slack channel ID to post to (overrides CHU_SLACK_CHANNEL_ID). "
+             "See system_prompt.md's Mode 0 -- always pass this explicitly.",
+    )
+    args = parser.parse_args()
+    text = sys.stdin.read() if args.text == "-" else args.text
+    post(text, channel=args.channel)
 
 
 if __name__ == "__main__":

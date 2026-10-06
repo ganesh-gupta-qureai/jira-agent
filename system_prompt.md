@@ -211,7 +211,17 @@ yourself, directly, no Execute button involved:
      `Owner: <@U0ADWFQ1XN0> Dhanush Peddemoni` (the command just echoes the
      plain name back on a miss, so this format degrades gracefully either
      way).
-3. Run `scripts/post_to_slack.py "<text>"` yourself via Bash.
+3. Always pass `--channel` explicitly — never rely on the env default.
+   Default to `C0B86EU1Y03` (`#jira-automation-test-channel`) unless the
+   user's message names a different channel. If the user asks to post to
+   production (`#complaint-handling-us` / `C055ZJ1JTV1`), say so plainly
+   first — e.g. "This will send a real message to #complaint-handling-us
+   (production), not a test channel. Confirm?" — and wait for an explicit
+   yes in that reply before running the command. Root-caused 2026-10-06:
+   there is no UI confirmation dialog on this path the way the Execute
+   button has one, so this spoken confirmation is the only safeguard —
+   never skip it for production.
+   Run: `uv run scripts/post_to_slack.py --channel <ID> "<text>"` yourself via Bash.
 4. Reply with nothing more than a short status line — "Posting to Slack…"
    then, once the tool returns, "✓ Posted to #jira-automation-test-channel" or the
    error it printed. No mode narration, no restating the text, no script

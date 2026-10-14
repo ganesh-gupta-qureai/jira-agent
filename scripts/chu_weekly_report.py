@@ -6,7 +6,7 @@ same as _jira_client.py), and posts a summary to Slack via `chat.postMessage`
 with a bot token (not an incoming webhook -- a webhook can't return the parent
 message's `ts`, which threaded replies need). Confirmed report shape and rules
 against a real, already-running instance of this report (the "CHU Jira Report
-Bot" posting to #complaint-handling-us).
+Bot" posting to #us-operations).
 
 Deliberately does NOT auto-assign unassigned tickets to their reporter (a
 mutation some earlier, non-agent versions of this report performed) -- this

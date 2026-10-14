@@ -1086,6 +1086,14 @@ a.sidebar__back .back-arrow {
 .sched__status--ok { color: var(--success); }
 .sched__status--error { color: #ef4444; }
 .sched__status--paused { color: var(--text-muted); }
+.sched__owner {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
 .msg__footer { margin-top: 8px; }
 .slack-post { display: flex; align-items: center; gap: 8px; }
 .slack-post__channel {

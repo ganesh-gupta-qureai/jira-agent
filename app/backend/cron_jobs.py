@@ -46,6 +46,9 @@ def _read_all(user_id: str) -> list[dict]:
         if not j.get("channel"):
             j["channel"] = DEFAULT_TEST_CHANNEL
             changed = True
+        if not j.get("owner"):
+            j["owner"] = user_id  # self-heal jobs created before "owner" existed
+            changed = True
     if changed:
         _write_all(user_id, jobs)
     return jobs
@@ -79,6 +82,7 @@ def create_job(
 ) -> dict:
     job = {
         "id": uuid.uuid4().hex,
+        "owner": user_id,          # who created it -- see list_all_jobs/find_owner
         "name": name,
         "code": code,
         "cron_expr": cron_expr,
@@ -104,6 +108,23 @@ def delete_job(user_id: str, job_id: str) -> bool:
         return False
     _write_all(user_id, filtered)
     return True
+
+
+def promote_to_production(user_id: str, job_id: str, channel: str) -> dict | None:
+    """Flip an already-validated test-channel job over to post for real in
+    `channel` (the production channel) going forward -- the "promote the
+    validated alerts from testing to production" workflow Anish asked for
+    (2026-10-14). Mutates the job in place rather than creating a second
+    copy: a promoted automation IS the production automation from here on,
+    same schedule and script, just no longer test-only."""
+    jobs = _read_all(user_id)
+    for j in jobs:
+        if j["id"] == job_id:
+            j["channel"] = channel
+            j["send"] = True
+            _write_all(user_id, jobs)
+            return j
+    return None
 
 
 def set_enabled(user_id: str, job_id: str, enabled: bool) -> dict | None:
@@ -132,3 +153,28 @@ def all_user_ids() -> list[str]:
     if not USERS_ROOT.is_dir():
         return []
     return [p.parent.name for p in USERS_ROOT.glob("*/cron_jobs.json")]
+
+
+def list_all_jobs() -> list[dict]:
+    """Every job across every user, newest first. This is a small, trusted
+    ops team (Ganesh/Shamil/Anish) sharing one Jira agent, not a multi-tenant
+    product -- a schedule one of them sets up (e.g. Ganesh, since he's the
+    one iterating on scripts in chat) must be visible to the other two in
+    the Scheduled tab, not siloed by whichever X-User-Id created it. Root
+    cause of the "schedules tab looks empty" report (2026-10-14): the tab
+    only ever queried the current viewer's own per-user job file."""
+    jobs: list[dict] = []
+    for uid in all_user_ids():
+        jobs.extend(list_jobs(uid))
+    return sorted(jobs, key=lambda j: j["created_at"], reverse=True)
+
+
+def find_owner(job_id: str) -> str | None:
+    """Which user's file a job actually lives in -- needed because the
+    Scheduled tab now shows every user's jobs, so a toggle/delete from
+    anyone's tab must look the job up across all users, not just the
+    current viewer's own file."""
+    for uid in all_user_ids():
+        if get_job(uid, job_id) is not None:
+            return uid
+    return None

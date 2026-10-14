@@ -3,7 +3,7 @@
 // automation zip's confirmed test channel.
 export const SLACK_CHANNELS = [
   { id: 'C0B86EU1Y03', label: '#jira-automation-test-channel (test)' },
-  { id: 'C055ZJ1JTV1', label: '#complaint-handling-us (production)' },
+  { id: 'C055ZJ1JTV1', label: '#us-operations (production)' },
 ] as const
 
 // Default to the test channel -- jira-agent's schedule feature is running in

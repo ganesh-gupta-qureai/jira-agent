@@ -3,6 +3,7 @@ import { apiUrl, bounceIfUnauthorized } from './api'
 // Mirrors backend/cron_jobs.py's record shape.
 export type CronJob = {
   id: string
+  owner: string // email of whoever created it -- the tab shows every user's jobs, not just the viewer's
   name: string
   code: string
   cron_expr: string
@@ -71,4 +72,14 @@ export async function setCronJobEnabled(id: string, enabled: boolean): Promise<C
 export async function deleteCronJob(id: string): Promise<void> {
   const res = await fetch(apiUrl(`/api/cron-jobs/${id}`), { method: 'DELETE' })
   await throwIfBad(res)
+}
+
+export async function promoteCronJob(id: string, confirmedProduction: boolean): Promise<CronJob> {
+  const res = await fetch(apiUrl(`/api/cron-jobs/${id}/promote`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirmed_production: confirmedProduction }),
+  })
+  await throwIfBad(res)
+  return res.json()
 }

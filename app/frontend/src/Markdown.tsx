@@ -258,7 +258,7 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
     let confirmedProduction = false
     if (send && channel === PRODUCTION_SLACK_CHANNEL_ID) {
       const ok = window.confirm(
-        'This will send a REAL message to #complaint-handling-us (production), not a test channel. Continue?',
+        'This will send a REAL message to #us-operations (production), not a test channel. Continue?',
       )
       if (!ok) return
       confirmedProduction = true
@@ -290,7 +290,7 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
     let confirmedProduction = false
     if (send && channel === PRODUCTION_SLACK_CHANNEL_ID) {
       const ok = window.confirm(
-        'This scheduled job will send REAL messages to #complaint-handling-us (production) every time it runs, not a test channel. Continue?',
+        'This scheduled job will send REAL messages to #us-operations (production) every time it runs, not a test channel. Continue?',
       )
       if (!ok) return
       confirmedProduction = true

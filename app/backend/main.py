@@ -176,6 +176,10 @@ class SetCronJobEnabledRequest(BaseModel):
     enabled: bool
 
 
+class PromoteCronJobRequest(BaseModel):
+    confirmed_production: bool = False
+
+
 @router.get("/api/health")
 async def health() -> dict:
     return {"ok": True}
@@ -377,27 +381,54 @@ async def create_cron_job_route(req: CreateCronJobRequest, user: str = Depends(c
 
 @router.get("/api/cron-jobs")
 async def cron_jobs_route(user: str = Depends(current_user)) -> list[dict]:
-    """The Scheduled tab's list -- every job the user has created, newest first."""
-    return cron_jobs.list_jobs(user)
+    """The Scheduled tab's list. Shared across every user (not just the
+    caller) -- this is a 3-person ops team on one shared agent, and a
+    schedule one of them created must be visible to the other two (see
+    cron_jobs.list_all_jobs's docstring; root-caused 2026-10-14, the tab
+    looked empty for anyone who hadn't personally created a job)."""
+    return cron_jobs.list_all_jobs()
 
 
 @router.patch("/api/cron-jobs/{job_id}")
 async def set_cron_job_enabled_route(
     job_id: str, req: SetCronJobEnabledRequest, user: str = Depends(current_user)
 ) -> dict:
-    job = cron_jobs.set_enabled(user, job_id, req.enabled)
-    if job is None:
+    owner = cron_jobs.find_owner(job_id)
+    if owner is None:
         raise HTTPException(status_code=404, detail="job not found")
-    cron_scheduler.schedule_job(user, job)  # re-registers if enabled, unschedules if not
+    job = cron_jobs.set_enabled(owner, job_id, req.enabled)
+    cron_scheduler.schedule_job(owner, job)  # re-registers if enabled, unschedules if not
     return job
 
 
 @router.delete("/api/cron-jobs/{job_id}")
 async def delete_cron_job_route(job_id: str, user: str = Depends(current_user)) -> dict:
-    if not cron_jobs.delete_job(user, job_id):
+    owner = cron_jobs.find_owner(job_id)
+    if owner is None:
         raise HTTPException(status_code=404, detail="job not found")
-    cron_scheduler.unschedule_job(user, job_id)
+    cron_jobs.delete_job(owner, job_id)
+    cron_scheduler.unschedule_job(owner, job_id)
     return {"ok": True}
+
+
+@router.post("/api/cron-jobs/{job_id}/promote")
+async def promote_cron_job_route(
+    job_id: str, req: PromoteCronJobRequest, user: str = Depends(current_user)
+) -> dict:
+    """Promote an already-validated test-channel schedule to post for real in
+    the production channel going forward. Same explicit-confirmation gate as
+    every other path that can send to production (see create_cron_job_route /
+    execute_script_route)."""
+    if not req.confirmed_production:
+        raise HTTPException(
+            status_code=400, detail="Promoting a schedule to production requires explicit confirmation."
+        )
+    owner = cron_jobs.find_owner(job_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    job = cron_jobs.promote_to_production(owner, job_id, PRODUCTION_SLACK_CHANNEL_ID)
+    cron_scheduler.schedule_job(owner, job)
+    return job
 
 
 @router.get("/api/conversations")

@@ -3,7 +3,7 @@
 Reference for generating/adapting `scripts/chu_weekly_report.py` or any similar
 Jira-to-Slack report script for Complaint Handling US (project `CHU`). These
 rules come from an already-running instance of this exact report (the "CHU
-Jira Report Bot" posting to `#complaint-handling-us`) -- follow them rather
+Jira Report Bot" posting to `#us-operations`) -- follow them rather
 than inventing a different report shape.
 
 ## Opening line

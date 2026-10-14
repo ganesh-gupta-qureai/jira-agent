@@ -73,6 +73,23 @@ def list_conversations(user_id: str) -> list[dict]:
     return out
 
 
+# A heavily-iterated chat (many Bash/tool calls, each carrying a large stdout
+# dump) has no natural size limit in a Claude Code transcript. Replaying it
+# unbounded into one SSE SYNC frame -- the whole history, in a single JSON
+# blob -- is what crashed the app on reopen (reported 2026-10-14): the
+# browser tab locks up parsing/rendering a multi-MB payload. Cap both the
+# per-field size and the total item count so a long chat still opens, just
+# with its oldest/largest content trimmed instead of the whole UI freezing.
+_MAX_FIELD_CHARS = 8_000
+_MAX_ITEMS = 250
+
+
+def _truncate(text: str) -> str:
+    if len(text) <= _MAX_FIELD_CHARS:
+        return text
+    return text[:_MAX_FIELD_CHARS] + f"\n... (truncated, {len(text) - _MAX_FIELD_CHARS} more chars)"
+
+
 def get_conversation(user_id: str, session_id: str) -> list[dict] | None:
     """Replay one transcript as timeline items the frontend can render.
 
@@ -80,6 +97,9 @@ def get_conversation(user_id: str, session_id: str) -> list[dict] | None:
         {kind: "user", id, text}
         {kind: "assistant_text", id, text}
         {kind: "tool_call", id, name, args, result}
+
+    Per-field text is capped at _MAX_FIELD_CHARS and the result is capped at
+    the most recent _MAX_ITEMS items -- see the comment above.
 
     NOTE: uses file order, correct for linear conversations. Rewound sessions
     (branching via parentUuid) could interleave branches — see the caveat in
@@ -111,7 +131,7 @@ def get_conversation(user_id: str, session_id: str) -> list[dict] | None:
                 content = e.get("message", {}).get("content")
                 if isinstance(content, str):
                     if content.strip():
-                        items.append({"kind": "user", "id": uid, "text": content})
+                        items.append({"kind": "user", "id": uid, "text": _truncate(content)})
                 elif isinstance(content, list):
                     for b in content:
                         if not isinstance(b, dict):
@@ -123,31 +143,40 @@ def get_conversation(user_id: str, session_id: str) -> list[dict] | None:
                                 res = "".join(
                                     c.get("text", "") for c in res if isinstance(c, dict)
                                 )
-                            if tid in tool_by_id:
-                                tool_by_id[tid]["result"] = res
+                            if tid in tool_by_id and isinstance(res, str):
+                                tool_by_id[tid]["result"] = _truncate(res)
 
             elif etype == "assistant":
                 content = e.get("message", {}).get("content", [])
                 if isinstance(content, str):
                     if content.strip():
-                        items.append({"kind": "assistant_text", "id": uid, "text": content})
+                        items.append({"kind": "assistant_text", "id": uid, "text": _truncate(content)})
                 elif isinstance(content, list):
                     for j, b in enumerate(content):
                         if not isinstance(b, dict):
                             continue
                         if b.get("type") == "text" and b.get("text", "").strip():
                             items.append(
-                                {"kind": "assistant_text", "id": f"{uid}-{j}", "text": b["text"]}
+                                {"kind": "assistant_text", "id": f"{uid}-{j}", "text": _truncate(b["text"])}
                             )
                         elif b.get("type") == "tool_use":
                             item = {
                                 "kind": "tool_call",
                                 "id": b.get("id", f"{uid}-{j}"),
                                 "name": b.get("name", ""),
-                                "args": json.dumps(b.get("input", {})),
+                                "args": _truncate(json.dumps(b.get("input", {}))),
                                 "result": None,
                             }
                             tool_by_id[item["id"]] = item
                             items.append(item)
 
+    if len(items) > _MAX_ITEMS:
+        omitted = len(items) - _MAX_ITEMS
+        items = items[-_MAX_ITEMS:]
+        items.insert(0, {
+            "kind": "assistant_text",
+            "id": "truncation-notice",
+            "text": f"_(earlier history in this chat — {omitted} item(s) — was trimmed so it can load; "
+                    f"see the Scripts log for the full record)_",
+        })
     return items

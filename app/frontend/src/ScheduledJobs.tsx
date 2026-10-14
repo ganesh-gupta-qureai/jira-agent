@@ -3,12 +3,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   deleteCronJob,
   fetchCronJobs,
+  promoteCronJob,
   setCronJobEnabled,
   type CronJob,
 } from './cronJobsApi'
 import { highlightPython } from './Markdown'
 import { formatAgo, formatLocalDateTime } from './formatAgo'
-import { SLACK_CHANNELS } from './slackChannels'
+import { PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } from './slackChannels'
 
 function channelLabel(id: string | null): string {
   return SLACK_CHANNELS.find((c) => c.id === id)?.label ?? id ?? 'default (CHU_SLACK_CHANNEL_ID)'
@@ -54,6 +55,27 @@ function JobRow({ job, onChanged }: { job: CronJob; onChanged: (job: CronJob | n
     }
   }
 
+  async function handlePromote(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (busy) return
+    if (
+      !window.confirm(
+        `Promote "${job.name}" to PRODUCTION (#us-operations)? It will start posting for real on its ` +
+          `existing schedule (${job.cron_expr}) instead of the test channel. This can't be undone from here.`,
+      )
+    )
+      return
+    setBusy(true)
+    try {
+      const updated = await promoteCronJob(job.id, true)
+      onChanged(updated, job.id)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="history__row">
       <button type="button" className="history__head" onClick={() => setOpen((o) => !o)}>
@@ -62,6 +84,9 @@ function JobRow({ job, onChanged }: { job: CronJob; onChanged: (job: CronJob | n
         </span>
         <span className="history__when" title={status.label}>
           {job.name}
+        </span>
+        <span className="sched__owner" title={`Created by ${job.owner}`}>
+          {job.owner.split('@')[0]}
         </span>
         <span className={`history__slack ${status.className}`}>{status.label}</span>
         <span className="history__chev">{open ? '▾' : '▸'}</span>
@@ -92,6 +117,11 @@ function JobRow({ job, onChanged }: { job: CronJob; onChanged: (job: CronJob | n
             <button className="btn btn--ghost" onClick={toggleEnabled} disabled={busy}>
               {job.enabled ? 'Pause' : 'Resume'}
             </button>
+            {job.channel !== PRODUCTION_SLACK_CHANNEL_ID && (
+              <button className="btn btn--solid" onClick={handlePromote} disabled={busy}>
+                Promote to production
+              </button>
+            )}
             <button className="btn btn--ghost history__delete" onClick={handleDelete} disabled={busy}>
               Delete
             </button>

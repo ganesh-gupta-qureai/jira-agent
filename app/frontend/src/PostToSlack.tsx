@@ -51,7 +51,7 @@ export function PostToSlackButton({ text }: { text: string }) {
     if (status === 'posting') return
     if (channel === PRODUCTION_SLACK_CHANNEL_ID) {
       const ok = window.confirm(
-        'This will send a REAL message to #complaint-handling-us (production), not a test channel. Continue?',
+        'This will send a REAL message to #us-operations (production), not a test channel. Continue?',
       )
       if (!ok) return
     }

@@ -1080,6 +1080,7 @@ a.sidebar__back .back-arrow {
   padding-top: 2px;
 }
 .sched-form__error { font-size: 12px; color: #ef4444; }
+.sched-form__hint { font-size: 11px; color: var(--text-muted); margin-top: -4px; }
 .sched-form__actions { display: flex; gap: 6px; margin-top: 2px; }
 
 /* ---------- scheduled cron jobs list (reuses .history__* layout) --------- */

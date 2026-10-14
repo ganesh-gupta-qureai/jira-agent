@@ -141,13 +141,22 @@ export function ScheduleForm({
       )}
 
       <div className="sched-form__row">
-        <span className="sched-form__label">Time</span>
+        <span className="sched-form__label">Time (UTC)</span>
         <input
           type="time"
           className="sched-form__input sched-form__input--time"
           value={time}
           onChange={(e) => setTime(e.target.value || '09:00')}
         />
+      </div>
+      {/* The backend scheduler (APScheduler) runs on the container's system
+          clock, which is UTC -- confirmed live 2026-10-14. buildCronExpr
+          below passes this value straight through with no conversion, so a
+          user entering their own local time (e.g. 9am IST) here would
+          silently schedule it for 9am UTC instead, 5.5 hours off. Root-caused
+          after nearly shipping exactly that mistake for Automation 4. */}
+      <div className="sched-form__hint">
+        Enter the time in UTC, not your local time — e.g. 9:00 AM IST is 03:30 UTC.
       </div>
 
       <div className="sched-form__row">

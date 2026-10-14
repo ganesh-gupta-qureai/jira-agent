@@ -358,13 +358,20 @@ async def execute_script(user_id: str, code: str, channel: str | None = None, se
         # preview should never reach Slack at all.
         already_posted = ok and bool(_SLACK_ALREADY_POSTED_RE.search(stdout_text))
         slack_error = _post_to_slack(stdout_text, channel) if (ok and send and not already_posted) else None
+        # Root-caused live 2026-10-14: a preview run (send=False) never calls
+        # _post_to_slack above, so slack_error stays None because nothing was
+        # ATTEMPTED, not because it succeeded. The old `already_posted or
+        # slack_error is None` read that as success and reported "Posted to
+        # Slack" for a run that sent nothing at all -- the same
+        # never-attempted/succeeded conflation as the original incident, just
+        # recurring in this one downstream expression. `send` must gate it.
         result = {
             "ok": ok,
             "timed_out": False,
             "exit_code": proc.returncode,
             "stdout": stdout_text,
             "stderr": stderr.decode("utf-8", errors="replace")[:OUTPUT_MAX_BYTES],
-            "posted_to_slack": ok and (already_posted or slack_error is None),
+            "posted_to_slack": ok and ((send and already_posted) or (send and slack_error is None)),
             "slack_error": slack_error,
         }
         record_execution(user_id, code, result)

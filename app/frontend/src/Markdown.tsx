@@ -12,6 +12,32 @@ import { DEFAULT_SLACK_CHANNEL, PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } fr
 // unordered/ordered lists, blockquotes, and inline spans (bold, italic,
 // inline code, links). Not a spec-complete parser — just enough to read well.
 
+// A generated script's useful title is almost never its literal first line --
+// that's usually a shebang (`#!/usr/bin/env python3`) or a docstring opener
+// (`"""`) with the real description on the line after. Root-caused live
+// 2026-10-15: the old `firstLine.replace(/^#\s*/, '')` logic was written for
+// a "# Title" comment convention these scripts don't actually use, so a
+// shebang's `#!` lost only the `#`, saving every such script under the
+// identical, useless title "!/usr/bin/env python3" -- exactly the scripts
+// the new shared Saved tab (ScheduledJobs.tsx) needs to tell apart by title.
+function deriveScriptTitle(code: string): string {
+  const lines = code.split('\n').map((l) => l.trim())
+  let i = 0
+  while (i < lines.length && (lines[i] === '' || lines[i].startsWith('#!'))) i++
+  if (i >= lines.length) return 'Saved script'
+  let line = lines[i]
+  const quoteMatch = line.match(/^("""|''')(.*)$/)
+  if (quoteMatch) {
+    // `"""Title on the same line` vs. a bare `"""` opener with the title on
+    // the next line -- both are common across this agent's generated scripts.
+    line = quoteMatch[2].trim() || (lines[i + 1] ?? '').trim()
+  } else {
+    line = line.replace(/^#\s*/, '')
+  }
+  line = line.replace(/("""|''')\s*$/, '').trim()
+  return line.slice(0, 60) || 'Saved script'
+}
+
 // threadId is optional and only used to scope a CodeBlock's "Save" button
 // (see SavedScriptsPanel) -- Markdown is used in a couple of places with no
 // chat context at all, where that button just doesn't render.
@@ -223,8 +249,7 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
     if (!threadId || saveStatus === 'saving') return
     setSaveStatus('saving')
     try {
-      const firstLine = code.trim().split('\n')[0]?.replace(/^#\s*/, '').slice(0, 60) || 'Saved script'
-      await saveScript(threadId, code, firstLine)
+      await saveScript(threadId, code, deriveScriptTitle(code))
       setSaveStatus('saved')
     } catch {
       setSaveStatus('idle')

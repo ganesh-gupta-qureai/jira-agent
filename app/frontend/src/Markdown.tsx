@@ -416,16 +416,30 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
           {executable && <RecentSlackPosts channel={channel} />}
         </div>
       )}
-      {schedOpen && (
-        <ScheduleForm
-          onSubmit={submitSchedule}
-          onCancel={() => setSchedOpen(false)}
-          busy={schedBusy}
-          error={schedError}
-          submitLabel={getEditingJob(threadId) ? 'Save changes' : 'Create schedule'}
-          busyLabel={getEditingJob(threadId) ? 'Saving…' : 'Creating…'}
-        />
-      )}
+      {schedOpen && (() => {
+        const editing = getEditingJob(threadId)
+        return (
+          <ScheduleForm
+            onSubmit={submitSchedule}
+            onCancel={() => setSchedOpen(false)}
+            busy={schedBusy}
+            error={schedError}
+            submitLabel={editing ? 'Save changes' : 'Create schedule'}
+            busyLabel={editing ? 'Saving…' : 'Creating…'}
+            initial={
+              editing
+                ? {
+                    name: editing.name,
+                    cronExpr: editing.cronExpr,
+                    timezone: editing.timezone,
+                    startDate: editing.startDate,
+                    endDate: editing.endDate,
+                  }
+                : undefined
+            }
+          />
+        )
+      })()}
       {error && <div className="md-codeblock__result md-codeblock__result--error">{error}</div>}
       {result && (
         <div

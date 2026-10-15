@@ -8,7 +8,19 @@
 // inherit another thread's in-progress edit.
 const KEY_PREFIX = 'jira-agent:editingJob:'
 
-export type EditingJob = { id: string; name: string }
+// Carries the job's current schedule too (not just id/name) so Markdown.tsx's
+// Schedule form can pre-fill cron/timezone/dates instead of resetting to
+// defaults -- root-caused 2026-10-15: editing Automation 4 via chat reset its
+// schedule to "every Monday 9am UTC" with no warning, because the form had
+// nothing to pre-fill from.
+export type EditingJob = {
+  id: string
+  name: string
+  cronExpr: string
+  timezone: string
+  startDate: string | null
+  endDate: string | null
+}
 
 export function setEditingJob(threadId: string, job: EditingJob) {
   try {

@@ -189,8 +189,16 @@ export default function App() {
     setDraft('')
     resetComposerHeight()
     setView('chat')
-    setEditingJob(t, { id: job.id, name: job.name })
-    setEditingJobState({ id: job.id, name: job.name })
+    const editingInfo = {
+      id: job.id,
+      name: job.name,
+      cronExpr: job.cron_expr,
+      timezone: job.timezone,
+      startDate: job.start_date,
+      endDate: job.end_date,
+    }
+    setEditingJob(t, editingInfo)
+    setEditingJobState(editingInfo)
 
     const channel = SLACK_CHANNELS.find((c) => c.id === job.channel)?.label ?? job.channel ?? 'default channel'
     const seed =

@@ -7,7 +7,19 @@ export type CronJobRun = {
   exit_code: number | null
   timed_out: boolean
   posted_to_slack: boolean
+  manual: boolean // triggered by the Scheduled tab's own Execute button, not a real cron fire
   error: string | null
+}
+
+// Mirrors backend/script_runner.py's execute_script return shape.
+export type ExecuteResult = {
+  ok: boolean
+  timed_out: boolean
+  exit_code: number | null
+  stdout: string
+  stderr: string
+  posted_to_slack: boolean
+  slack_error: string | null
 }
 
 // Mirrors backend/cron_jobs.py's record shape.
@@ -23,6 +35,7 @@ export type CronJob = {
   send: boolean // whether each run sets CHU_REPORT_SEND=1
   created_at: number // unix seconds (float)
   enabled: boolean
+  archived: boolean
   last_run_at: number | null
   last_run_ok: boolean | null
   runs: CronJobRun[] // newest first, capped at 50 -- see cron_jobs._MAX_RUN_LOG
@@ -38,6 +51,12 @@ async function throwIfBad(res: Response): Promise<void> {
 
 export async function fetchCronJobs(): Promise<CronJob[]> {
   const res = await fetch(apiUrl('/api/cron-jobs'))
+  await throwIfBad(res)
+  return res.json()
+}
+
+export async function fetchArchivedCronJobs(): Promise<CronJob[]> {
+  const res = await fetch(apiUrl('/api/cron-jobs/archived'))
   await throwIfBad(res)
   return res.json()
 }
@@ -112,6 +131,24 @@ export async function updateCronJob(
 export async function deleteCronJob(id: string): Promise<void> {
   const res = await fetch(apiUrl(`/api/cron-jobs/${id}`), { method: 'DELETE' })
   await throwIfBad(res)
+}
+
+export async function archiveCronJob(id: string): Promise<CronJob> {
+  const res = await fetch(apiUrl(`/api/cron-jobs/${id}/archive`), { method: 'POST' })
+  await throwIfBad(res)
+  return res.json()
+}
+
+export async function unarchiveCronJob(id: string): Promise<CronJob> {
+  const res = await fetch(apiUrl(`/api/cron-jobs/${id}/unarchive`), { method: 'POST' })
+  await throwIfBad(res)
+  return res.json()
+}
+
+export async function executeCronJob(id: string): Promise<ExecuteResult> {
+  const res = await fetch(apiUrl(`/api/cron-jobs/${id}/execute`), { method: 'POST' })
+  await throwIfBad(res)
+  return res.json()
 }
 
 export async function promoteCronJob(id: string, confirmedProduction: boolean): Promise<CronJob> {

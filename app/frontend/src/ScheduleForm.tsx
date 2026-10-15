@@ -28,6 +28,50 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+function pad2(n: number): string {
+  return n.toString().padStart(2, '0')
+}
+
+type ParsedCron = {
+  freq: Frequency
+  time: string
+  weekdays: number[]
+  dayOfMonth: number
+  minuteInterval: number
+}
+
+// Best-effort inverse of buildCronExpr -- only needs to round-trip the shapes
+// that buildCronExpr itself produces (used to pre-fill this form when
+// re-scheduling an existing job). An expression this form didn't generate
+// (hand-written, or from an older version) falls back to a sane daily default
+// rather than guessing wrong.
+function parseCronExpr(expr: string): ParsedCron {
+  const fallback: ParsedCron = { freq: 'daily', time: '09:00', weekdays: [1], dayOfMonth: 1, minuteInterval: 5 }
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length !== 5) return fallback
+  const [mm, hh, dom, , dow] = parts
+
+  const minuteStep = mm.match(/^\*\/(\d+)$/)
+  if (minuteStep && hh === '*' && dom === '*' && dow === '*') {
+    return { ...fallback, freq: 'minutes', minuteInterval: parseInt(minuteStep[1], 10) }
+  }
+
+  const minute = parseInt(mm, 10)
+  const hour = parseInt(hh, 10)
+  if (Number.isNaN(minute) || Number.isNaN(hour)) return fallback
+  const time = `${pad2(hour)}:${pad2(minute)}`
+
+  if (dom !== '*' && dow === '*') {
+    const d = parseInt(dom, 10)
+    return { ...fallback, freq: 'monthly', time, dayOfMonth: Number.isNaN(d) ? 1 : d }
+  }
+  if (dow !== '*') {
+    const days = dow.split(',').map((d) => parseInt(d, 10)).filter((d) => !Number.isNaN(d))
+    return { ...fallback, freq: 'weekly', time, weekdays: days.length ? days : [1] }
+  }
+  return { ...fallback, freq: 'daily', time }
+}
+
 function buildCronExpr(
   freq: Frequency,
   time: string,
@@ -66,6 +110,15 @@ export type ScheduleValues = {
   endDate: string | null
 }
 
+// Pre-fills the form for editing an existing job (Re-schedule) instead of
+// creating a new one -- name + cron (reverse-parsed) + its current dates.
+export type ScheduleFormInitial = {
+  name: string
+  cronExpr: string
+  startDate: string | null
+  endDate: string | null
+}
+
 export function ScheduleForm({
   onSubmit,
   onCancel,
@@ -73,6 +126,7 @@ export function ScheduleForm({
   error,
   submitLabel = 'Create schedule',
   busyLabel = 'Creating…',
+  initial,
 }: {
   onSubmit: (values: ScheduleValues) => void
   onCancel: () => void
@@ -80,19 +134,22 @@ export function ScheduleForm({
   error: string | null
   submitLabel?: string
   busyLabel?: string
+  initial?: ScheduleFormInitial
 }) {
-  const [name, setName] = useState('')
-  const [freq, setFreq] = useState<Frequency>('weekly')
-  const [time, setTime] = useState('09:00')
-  const [weekdays, setWeekdays] = useState<number[]>([1]) // Monday
-  const [dayOfMonth, setDayOfMonth] = useState(1)
-  const [minuteInterval, setMinuteInterval] = useState(5)
+  const parsedInitial = useMemo(() => (initial ? parseCronExpr(initial.cronExpr) : null), [initial])
+
+  const [name, setName] = useState(initial?.name ?? '')
+  const [freq, setFreq] = useState<Frequency>(parsedInitial?.freq ?? 'weekly')
+  const [time, setTime] = useState(parsedInitial?.time ?? '09:00')
+  const [weekdays, setWeekdays] = useState<number[]>(parsedInitial?.weekdays ?? [1]) // Monday
+  const [dayOfMonth, setDayOfMonth] = useState(parsedInitial?.dayOfMonth ?? 1)
+  const [minuteInterval, setMinuteInterval] = useState(parsedInitial?.minuteInterval ?? 5)
   // Start date defaults ON with today prefilled -- a new schedule should
   // start firing immediately unless the user deliberately pushes it out.
-  const [useStart, setUseStart] = useState(true)
-  const [startDate, setStartDate] = useState(todayIso)
-  const [useEnd, setUseEnd] = useState(false)
-  const [endDate, setEndDate] = useState('')
+  const [useStart, setUseStart] = useState(initial ? !!initial.startDate : true)
+  const [startDate, setStartDate] = useState(initial?.startDate ?? todayIso())
+  const [useEnd, setUseEnd] = useState(!!initial?.endDate)
+  const [endDate, setEndDate] = useState(initial?.endDate ?? '')
 
   const cronExpr = useMemo(
     () => buildCronExpr(freq, time, weekdays, dayOfMonth, minuteInterval),

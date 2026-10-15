@@ -1,15 +1,20 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  deleteCronJob,
+  archiveCronJob,
+  executeCronJob,
+  fetchArchivedCronJobs,
   fetchCronJobs,
   promoteCronJob,
   setCronJobEnabled,
+  unarchiveCronJob,
   updateCronJob,
   type CronJob,
   type CronJobRun,
+  type ExecuteResult,
 } from './cronJobsApi'
 import { highlightPython } from './Markdown'
+import { ScheduleForm, type ScheduleValues } from './ScheduleForm'
 import { formatAgo, formatLocalDateTime } from './formatAgo'
 import { PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } from './slackChannels'
 
@@ -30,6 +35,7 @@ function RunLogRow({ run }: { run: CronJobRun }) {
       <span className="sched__run-icon">{run.ok ? '✓' : '✗'}</span>
       <span className="sched__run-when">{formatLocalDateTime(run.at * 1000)}</span>
       <span className="sched__run-detail">
+        {run.manual && 'manual · '}
         {run.timed_out
           ? 'timed out'
           : run.exit_code !== null
@@ -44,111 +50,24 @@ function RunLogRow({ run }: { run: CronJobRun }) {
   )
 }
 
-function EditJobForm({
-  job,
-  onSaved,
-  onCancel,
-}: {
-  job: CronJob
-  onSaved: (job: CronJob) => void
-  onCancel: () => void
-}) {
-  const [name, setName] = useState(job.name)
-  const [cronExpr, setCronExpr] = useState(job.cron_expr)
-  const [channel, setChannel] = useState(job.channel ?? SLACK_CHANNELS[0].id)
-  const [send, setSend] = useState(job.send)
-  const [startDate, setStartDate] = useState(job.start_date ?? '')
-  const [endDate, setEndDate] = useState(job.end_date ?? '')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function save() {
-    if (busy || !name.trim() || !cronExpr.trim()) return
-    let confirmedProduction = false
-    if (send && channel === PRODUCTION_SLACK_CHANNEL_ID) {
-      const ok = window.confirm(
-        'This edit will send REAL messages to #us-operations (production) every time it runs, not a test channel. Continue?',
-      )
-      if (!ok) return
-      confirmedProduction = true
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const updated = await updateCronJob(
-        job.id,
-        name.trim(),
-        cronExpr.trim(),
-        startDate || null,
-        endDate || null,
-        channel,
-        send,
-        confirmedProduction,
-      )
-      onSaved(updated)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save changes')
-    } finally {
-      setBusy(false)
-    }
-  }
-
+function ExecuteResultBox({ result }: { result: ExecuteResult }) {
   return (
-    <div className="sched-form">
-      <input className="sched-form__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
-      <div className="sched-form__row">
-        <span className="sched-form__label">Cron</span>
-        <input
-          className="sched-form__input"
-          value={cronExpr}
-          onChange={(e) => setCronExpr(e.target.value)}
-          placeholder="e.g. */10 * * * * (every 10 minutes)"
-        />
+    <div
+      className={`md-codeblock__result ${result.timed_out || !result.ok ? 'md-codeblock__result--error' : 'md-codeblock__result--ok'}`}
+    >
+      <div className="md-codeblock__result-head">
+        {result.timed_out ? 'Timed out' : result.ok ? 'Exit 0' : `Exit ${result.exit_code ?? '?'}`}
       </div>
-      <div className="sched-form__hint">5-field cron, UTC. Step syntax works, e.g. `*/10 * * * *` = every 10 minutes.</div>
-      <div className="sched-form__row">
-        <span className="sched-form__label">Channel</span>
-        <select className="sched-form__select" value={channel} onChange={(e) => setChannel(e.target.value)}>
-          {SLACK_CHANNELS.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="sched-form__row">
-        <label className="sched-form__checkbox">
-          <input type="checkbox" checked={send} onChange={(e) => setSend(e.target.checked)} />
-          Actually send
-        </label>
-      </div>
-      <div className="sched-form__row">
-        <span className="sched-form__label">Start date</span>
-        <input
-          type="date"
-          className="sched-form__input sched-form__input--date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-        />
-      </div>
-      <div className="sched-form__row">
-        <span className="sched-form__label">End date (optional)</span>
-        <input
-          type="date"
-          className="sched-form__input sched-form__input--date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-        />
-      </div>
-      <div className="sched-form__actions">
-        <button className="md-codeblock__execute" onClick={save} disabled={busy || !name.trim() || !cronExpr.trim()}>
-          {busy ? 'Saving…' : 'Save changes'}
-        </button>
-        <button className="md-codeblock__download" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-      {error && <div className="sched-form__error">{error}</div>}
+      {result.stdout && <pre className="md-pre">{result.stdout}</pre>}
+      {result.stderr && <pre className="md-pre">{result.stderr}</pre>}
+      {!result.stdout && !result.stderr && !result.timed_out && (
+        <div className="md-codeblock__result-empty">(no output)</div>
+      )}
+      {result.ok && (
+        <div className="md-codeblock__slack-status">
+          {result.posted_to_slack ? '✓ Posted to Slack' : `⚠ Not posted to Slack: ${result.slack_error}`}
+        </div>
+      )}
     </div>
   )
 }
@@ -157,14 +76,19 @@ function JobRow({
   job,
   onChanged,
   onEditInChat,
+  archivedView,
 }: {
   job: CronJob
   onChanged: (job: CronJob | null, id: string) => void
   onEditInChat: (job: CronJob) => void
+  archivedView: boolean
 }) {
   const [open, setOpen] = useState(false)
-  const [editing, setEditing] = useState(false)
+  const [rescheduling, setRescheduling] = useState(false)
+  const [reschedError, setReschedError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [execBusy, setExecBusy] = useState(false)
+  const [execResult, setExecResult] = useState<ExecuteResult | null>(null)
   const status = lastRunLabel(job)
 
   async function toggleEnabled(e: React.MouseEvent) {
@@ -181,13 +105,27 @@ function JobRow({
     }
   }
 
-  async function handleDelete(e: React.MouseEvent) {
+  async function handleArchive(e: React.MouseEvent) {
     e.stopPropagation()
     if (busy) return
-    if (!window.confirm(`Delete the schedule "${job.name}"? This can't be undone.`)) return
+    if (!window.confirm(`Archive "${job.name}"? It'll stop running and move to the Archived list — you can restore it later.`))
+      return
     setBusy(true)
     try {
-      await deleteCronJob(job.id)
+      await archiveCronJob(job.id)
+      onChanged(null, job.id)
+    } catch (err) {
+      console.error(err)
+      setBusy(false)
+    }
+  }
+
+  async function handleUnarchive(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (busy) return
+    setBusy(true)
+    try {
+      await unarchiveCronJob(job.id)
       onChanged(null, job.id)
     } catch (err) {
       console.error(err)
@@ -216,11 +154,89 @@ function JobRow({
     }
   }
 
+  async function handleExecute(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (execBusy) return
+    setExecBusy(true)
+    setExecResult(null)
+    try {
+      const result = await executeCronJob(job.id)
+      setExecResult(result)
+    } catch (err) {
+      setExecResult({
+        ok: false,
+        timed_out: false,
+        exit_code: null,
+        stdout: '',
+        stderr: err instanceof Error ? err.message : 'Execute failed',
+        posted_to_slack: false,
+        slack_error: null,
+      })
+    } finally {
+      setExecBusy(false)
+    }
+  }
+
+  async function quickField(patch: Partial<Pick<CronJob, 'channel' | 'send'>>) {
+    if (busy) return
+    const nextChannel = patch.channel ?? job.channel
+    const nextSend = patch.send ?? job.send
+    if (nextSend && nextChannel === PRODUCTION_SLACK_CHANNEL_ID && !(job.send && job.channel === PRODUCTION_SLACK_CHANNEL_ID)) {
+      if (
+        !window.confirm(
+          'This will send REAL messages to #us-operations (production) every time it runs, not a test channel. Continue?',
+        )
+      )
+        return
+    }
+    setBusy(true)
+    try {
+      const updated = await updateCronJob(
+        job.id,
+        job.name,
+        job.cron_expr,
+        job.start_date,
+        job.end_date,
+        nextChannel,
+        nextSend,
+        true, // already confirmed just above when moving to production
+      )
+      onChanged(updated, job.id)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function submitReschedule(values: ScheduleValues) {
+    setBusy(true)
+    setReschedError(null)
+    try {
+      const updated = await updateCronJob(
+        job.id,
+        values.name,
+        values.cronExpr,
+        values.startDate,
+        values.endDate,
+        job.channel,
+        job.send,
+        true, // channel/send unchanged here, already-confirmed values
+      )
+      onChanged(updated, job.id)
+      setRescheduling(false)
+    } catch (err) {
+      setReschedError(err instanceof Error ? err.message : 'Could not save changes')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="history__row">
       <button type="button" className="history__head" onClick={() => setOpen((o) => !o)}>
         <span className={`history__status ${job.enabled ? '' : 'sched__status--paused'}`}>
-          {job.enabled ? job.cron_expr : 'Paused'}
+          {job.archived ? 'Archived' : job.enabled ? job.cron_expr : 'Paused'}
         </span>
         <span className="history__when" title={status.label}>
           {job.name}
@@ -231,14 +247,42 @@ function JobRow({
         <span className={`history__slack ${status.className}`}>{status.label}</span>
         <span className="history__chev">{open ? '▾' : '▸'}</span>
       </button>
-      {open && !editing && (
+      {open && !rescheduling && (
         <div className="history__body">
           <div className="history__label">cron expression</div>
           <pre className="md-pre">{job.cron_expr}</pre>
           <div className="history__label">channel</div>
-          <pre className="md-pre">{channelLabel(job.channel)}</pre>
+          {archivedView ? (
+            <pre className="md-pre">{channelLabel(job.channel)}</pre>
+          ) : (
+            <select
+              className="sched-form__select"
+              value={job.channel ?? SLACK_CHANNELS[0].id}
+              onChange={(e) => quickField({ channel: e.target.value })}
+              onClick={(e) => e.stopPropagation()}
+              disabled={busy}
+            >
+              {SLACK_CHANNELS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          )}
           <div className="history__label">send mode</div>
-          <pre className="md-pre">{job.send ? 'Actually sends to Slack' : 'Preview only (never posts)'}</pre>
+          {archivedView ? (
+            <pre className="md-pre">{job.send ? 'Actually sends to Slack' : 'Preview only (never posts)'}</pre>
+          ) : (
+            <label className="sched-form__checkbox" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={job.send}
+                onChange={(e) => quickField({ send: e.target.checked })}
+                disabled={busy}
+              />
+              Actually sends to Slack
+            </label>
+          )}
           {(job.start_date || job.end_date) && (
             <>
               <div className="history__label">date range</div>
@@ -263,52 +307,70 @@ function JobRow({
           <pre className="md-pre">
             <code>{highlightPython(job.code)}</code>
           </pre>
+          {execResult && <ExecuteResultBox result={execResult} />}
           <div className="history__actions">
-            <button className="btn btn--ghost" onClick={toggleEnabled} disabled={busy}>
-              {job.enabled ? 'Pause' : 'Resume'}
-            </button>
-            <button
-              className="btn btn--ghost"
-              onClick={(e) => {
-                e.stopPropagation()
-                setEditing(true)
-              }}
-              disabled={busy}
-              title="Change the name, cron schedule, channel, send mode, or dates"
-            >
-              Edit schedule
-            </button>
-            <button
-              className="btn btn--ghost"
-              onClick={(e) => {
-                e.stopPropagation()
-                onEditInChat(job)
-              }}
-              disabled={busy}
-              title="Open a new chat with this automation's script to revise the logic itself"
-            >
-              Edit script
-            </button>
-            {job.channel !== PRODUCTION_SLACK_CHANNEL_ID && (
-              <button className="btn btn--solid" onClick={handlePromote} disabled={busy}>
-                Promote to production
+            {archivedView ? (
+              <button className="btn btn--ghost" onClick={handleUnarchive} disabled={busy}>
+                Unarchive
               </button>
+            ) : (
+              <>
+                <button className="btn btn--ghost" onClick={toggleEnabled} disabled={busy}>
+                  {job.enabled ? 'Pause' : 'Resume'}
+                </button>
+                <button
+                  className="btn btn--ghost"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setRescheduling(true)
+                  }}
+                  disabled={busy}
+                  title="Rename, and change the interval/dates with date & time pickers"
+                >
+                  Re-schedule
+                </button>
+                <button className="btn btn--ghost" onClick={handleExecute} disabled={execBusy}>
+                  {execBusy ? 'Running…' : 'Execute'}
+                </button>
+                <button
+                  className="btn btn--ghost"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEditInChat(job)
+                  }}
+                  disabled={busy}
+                  title="Open a new chat with this automation's script to revise the logic itself"
+                >
+                  Edit Automation
+                </button>
+                {job.channel !== PRODUCTION_SLACK_CHANNEL_ID && (
+                  <button className="btn btn--solid" onClick={handlePromote} disabled={busy}>
+                    Promote to production
+                  </button>
+                )}
+                <button className="btn btn--ghost history__delete" onClick={handleArchive} disabled={busy}>
+                  Archive
+                </button>
+              </>
             )}
-            <button className="btn btn--ghost history__delete" onClick={handleDelete} disabled={busy}>
-              Delete
-            </button>
           </div>
         </div>
       )}
-      {open && editing && (
+      {open && rescheduling && (
         <div className="history__body">
-          <EditJobForm
-            job={job}
-            onCancel={() => setEditing(false)}
-            onSaved={(updated) => {
-              onChanged(updated, job.id)
-              setEditing(false)
+          <ScheduleForm
+            initial={{
+              name: job.name,
+              cronExpr: job.cron_expr,
+              startDate: job.start_date,
+              endDate: job.end_date,
             }}
+            onCancel={() => setRescheduling(false)}
+            onSubmit={submitReschedule}
+            busy={busy}
+            error={reschedError}
+            submitLabel="Save changes"
+            busyLabel="Saving…"
           />
         </div>
       )}
@@ -318,32 +380,72 @@ function JobRow({
 
 export default function ScheduledJobs({ onEditInChat }: { onEditInChat: (job: CronJob) => void }) {
   const queryClient = useQueryClient()
+  const [tab, setTab] = useState<'active' | 'archived'>('active')
   const { data: jobs = [], isLoading } = useQuery({
     queryKey: ['cron-jobs'],
     queryFn: fetchCronJobs,
   })
+  const { data: archivedJobs = [], isLoading: archivedLoading } = useQuery({
+    queryKey: ['cron-jobs-archived'],
+    queryFn: fetchArchivedCronJobs,
+    enabled: tab === 'archived',
+  })
 
   function applyChange(updated: CronJob | null, id: string) {
-    queryClient.setQueryData<CronJob[]>(['cron-jobs'], (prev) =>
-      (prev ?? []).flatMap((j) => (j.id !== id ? [j] : updated ? [updated] : [])),
-    )
+    // An archive/unarchive moves a job between the two lists rather than
+    // just updating it in place, so invalidate both instead of only patching
+    // the list the click happened in.
+    queryClient.invalidateQueries({ queryKey: ['cron-jobs'] })
+    queryClient.invalidateQueries({ queryKey: ['cron-jobs-archived'] })
+    if (updated) {
+      queryClient.setQueryData<CronJob[]>(['cron-jobs'], (prev) =>
+        (prev ?? []).map((j) => (j.id === id ? updated : j)),
+      )
+    }
   }
+
+  const list = tab === 'active' ? jobs : archivedJobs
+  const loading = tab === 'active' ? isLoading : archivedLoading
 
   return (
     <div className="history">
       <div className="history__toolbar">
+        <div className="sched-form__seg">
+          <button
+            type="button"
+            className={`sched-form__seg-btn ${tab === 'active' ? 'sched-form__seg-btn--active' : ''}`}
+            onClick={() => setTab('active')}
+          >
+            Active
+          </button>
+          <button
+            type="button"
+            className={`sched-form__seg-btn ${tab === 'archived' ? 'sched-form__seg-btn--active' : ''}`}
+            onClick={() => setTab('archived')}
+          >
+            Archived
+          </button>
+        </div>
         <div className="history__count">
-          {jobs.length} schedule{jobs.length === 1 ? '' : 's'}
+          {list.length} schedule{list.length === 1 ? '' : 's'}
         </div>
       </div>
-      {isLoading && <div className="history__empty">Loading…</div>}
-      {!isLoading && jobs.length === 0 && (
+      {loading && <div className="history__empty">Loading…</div>}
+      {!loading && list.length === 0 && (
         <div className="history__empty">
-          No schedules yet. Click "Schedule" under a generated script in chat to create one.
+          {tab === 'active'
+            ? 'No schedules yet. Click "Schedule" under a generated script in chat to create one.'
+            : 'No archived schedules.'}
         </div>
       )}
-      {jobs.map((job) => (
-        <JobRow key={job.id} job={job} onChanged={applyChange} onEditInChat={onEditInChat} />
+      {list.map((job) => (
+        <JobRow
+          key={job.id}
+          job={job}
+          onChanged={applyChange}
+          onEditInChat={onEditInChat}
+          archivedView={tab === 'archived'}
+        />
       ))}
     </div>
   )

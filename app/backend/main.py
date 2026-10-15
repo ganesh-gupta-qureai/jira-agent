@@ -399,12 +399,18 @@ async def create_cron_job_route(req: CreateCronJobRequest, user: str = Depends(c
 
 @router.get("/api/cron-jobs")
 async def cron_jobs_route(user: str = Depends(current_user)) -> list[dict]:
-    """The Scheduled tab's list. Shared across every user (not just the
-    caller) -- this is a 3-person ops team on one shared agent, and a
-    schedule one of them created must be visible to the other two (see
-    cron_jobs.list_all_jobs's docstring; root-caused 2026-10-14, the tab
-    looked empty for anyone who hadn't personally created a job)."""
-    return cron_jobs.list_all_jobs()
+    """The Scheduled tab's list (active only -- see /api/cron-jobs/archived).
+    Shared across every user (not just the caller) -- this is a 3-person ops
+    team on one shared agent, and a schedule one of them created must be
+    visible to the other two (see cron_jobs.list_all_jobs's docstring;
+    root-caused 2026-10-14, the tab looked empty for anyone who hadn't
+    personally created a job)."""
+    return cron_jobs.list_all_jobs(archived=False)
+
+
+@router.get("/api/cron-jobs/archived")
+async def archived_cron_jobs_route(user: str = Depends(current_user)) -> list[dict]:
+    return cron_jobs.list_all_jobs(archived=True)
 
 
 @router.patch("/api/cron-jobs/{job_id}")
@@ -427,6 +433,61 @@ async def delete_cron_job_route(job_id: str, user: str = Depends(current_user)) 
     cron_jobs.delete_job(owner, job_id)
     cron_scheduler.unschedule_job(owner, job_id)
     return {"ok": True}
+
+
+@router.post("/api/cron-jobs/{job_id}/archive")
+async def archive_cron_job_route(job_id: str, user: str = Depends(current_user)) -> dict:
+    """Reversible alternative to delete -- the UI no longer offers Delete
+    (2026-10-15), only Archive/Unarchive, so nobody loses a schedule's
+    definition or run history by mistake."""
+    owner = cron_jobs.find_owner(job_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    job = cron_jobs.archive_job(owner, job_id)
+    cron_scheduler.unschedule_job(owner, job_id)  # archiving also stops it firing
+    return job
+
+
+@router.post("/api/cron-jobs/{job_id}/unarchive")
+async def unarchive_cron_job_route(job_id: str, user: str = Depends(current_user)) -> dict:
+    owner = cron_jobs.find_owner(job_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    job = cron_jobs.unarchive_job(owner, job_id)
+    # Left disabled (see unarchive_job) -- not re-scheduled here on purpose;
+    # Resume is a separate, deliberate click.
+    return job
+
+
+@router.post("/api/cron-jobs/{job_id}/execute")
+async def execute_cron_job_route(job_id: str, user: str = Depends(current_user)) -> dict:
+    """Run a scheduled job's own stored code/channel/send right now, same as
+    the Scheduled tab's Execute button -- a one-off test/re-run outside its
+    cron timing. Uses the job's already-confirmed channel/send as-is (those
+    were explicitly confirmed when the job was created/promoted/edited), and
+    is logged into that job's own run history (manual=True) alongside its
+    real cron-triggered runs."""
+    owner = cron_jobs.find_owner(job_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    job = cron_jobs.get_job(owner, job_id)
+    result = await execute_script(owner, job["code"], job.get("channel"), job.get("send", False))
+    error = None
+    if not result.get("ok"):
+        error = (result.get("stderr") or "").strip() or None
+    elif result.get("slack_error"):
+        error = f"posted=false: {result['slack_error']}"
+    cron_jobs.record_run(
+        owner,
+        job_id,
+        ok=bool(result.get("ok")),
+        exit_code=result.get("exit_code"),
+        timed_out=bool(result.get("timed_out")),
+        posted_to_slack=bool(result.get("posted_to_slack")),
+        error=error,
+        manual=True,
+    )
+    return result
 
 
 @router.put("/api/cron-jobs/{job_id}")

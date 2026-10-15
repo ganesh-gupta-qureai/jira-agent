@@ -52,6 +52,9 @@ def _read_all(user_id: str) -> list[dict]:
         if "runs" not in j:
             j["runs"] = []  # self-heal jobs created before per-run logging existed
             changed = True
+        if "archived" not in j:
+            j["archived"] = False  # self-heal jobs created before archiving existed
+            changed = True
     if changed:
         _write_all(user_id, jobs)
     return jobs
@@ -95,8 +98,10 @@ def create_job(
         "send": send,              # sets CHU_REPORT_SEND=1 on every scheduled run (see script_runner.py)
         "created_at": time.time(),
         "enabled": True,
+        "archived": False,
         "last_run_at": None,
         "last_run_ok": None,
+        "runs": [],
     }
     jobs = _read_all(user_id)
     jobs.append(job)
@@ -105,12 +110,43 @@ def create_job(
 
 
 def delete_job(user_id: str, job_id: str) -> bool:
+    """Permanent removal -- kept for admin/API use, but the UI no longer
+    exposes a Delete button (2026-10-15: replaced by archive_job/
+    unarchive_job, which are reversible). Use those from the UI instead."""
     jobs = _read_all(user_id)
     filtered = [j for j in jobs if j["id"] != job_id]
     if len(filtered) == len(jobs):
         return False
     _write_all(user_id, filtered)
     return True
+
+
+def archive_job(user_id: str, job_id: str) -> dict | None:
+    """Reversible alternative to delete_job -- an archived job is also
+    disabled/unscheduled (archiving something that's still actively firing
+    would be surprising) and hidden from the default Scheduled tab view, but
+    its definition and run history are kept and it shows up in the Archived
+    view, restorable via unarchive_job."""
+    jobs = _read_all(user_id)
+    for j in jobs:
+        if j["id"] == job_id:
+            j["archived"] = True
+            j["enabled"] = False
+            _write_all(user_id, jobs)
+            return j
+    return None
+
+
+def unarchive_job(user_id: str, job_id: str) -> dict | None:
+    """Restore an archived job to the active list -- left Paused (not
+    re-enabled) so resuming its firing is still a deliberate separate click."""
+    jobs = _read_all(user_id)
+    for j in jobs:
+        if j["id"] == job_id:
+            j["archived"] = False
+            _write_all(user_id, jobs)
+            return j
+    return None
 
 
 def promote_to_production(user_id: str, job_id: str, channel: str) -> dict | None:
@@ -185,6 +221,7 @@ def record_run(
     timed_out: bool = False,
     posted_to_slack: bool = False,
     error: str | None = None,
+    manual: bool = False,
 ) -> None:
     jobs = _read_all(user_id)
     for j in jobs:
@@ -198,6 +235,10 @@ def record_run(
                 "exit_code": exit_code,
                 "timed_out": timed_out,
                 "posted_to_slack": posted_to_slack,
+                # manual = triggered by the Scheduled tab's own Execute button,
+                # not an unattended cron fire -- shown in the run log so it's
+                # obvious which entries were a deliberate test vs. the real thing.
+                "manual": manual,
                 # Trimmed, not the full stdout/stderr -- this is a log entry for
                 # the Scheduled tab, not a second copy of execution_history.py.
                 "error": error[:2000] if error else None,
@@ -215,17 +256,18 @@ def all_user_ids() -> list[str]:
     return [p.parent.name for p in USERS_ROOT.glob("*/cron_jobs.json")]
 
 
-def list_all_jobs() -> list[dict]:
-    """Every job across every user, newest first. This is a small, trusted
-    ops team (Ganesh/Shamil/Anish) sharing one Jira agent, not a multi-tenant
-    product -- a schedule one of them sets up (e.g. Ganesh, since he's the
-    one iterating on scripts in chat) must be visible to the other two in
-    the Scheduled tab, not siloed by whichever X-User-Id created it. Root
-    cause of the "schedules tab looks empty" report (2026-10-14): the tab
-    only ever queried the current viewer's own per-user job file."""
+def list_all_jobs(archived: bool = False) -> list[dict]:
+    """Every job across every user, newest first, filtered to `archived`'s
+    value. This is a small, trusted ops team (Ganesh/Shamil/Anish) sharing
+    one Jira agent, not a multi-tenant product -- a schedule one of them sets
+    up (e.g. Ganesh, since he's the one iterating on scripts in chat) must be
+    visible to the other two in the Scheduled tab, not siloed by whichever
+    X-User-Id created it. Root cause of the "schedules tab looks empty"
+    report (2026-10-14): the tab only ever queried the current viewer's own
+    per-user job file."""
     jobs: list[dict] = []
     for uid in all_user_ids():
-        jobs.extend(list_jobs(uid))
+        jobs.extend(j for j in list_jobs(uid) if j.get("archived", False) == archived)
     return sorted(jobs, key=lambda j: j["created_at"], reverse=True)
 
 

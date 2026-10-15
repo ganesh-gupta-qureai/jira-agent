@@ -1095,6 +1095,23 @@ a.sidebar__back .back-arrow {
   padding: 2px 8px;
   white-space: nowrap;
 }
+.sched__runs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.sched__run {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  flex-wrap: wrap;
+}
+.sched__run--ok .sched__run-icon { color: var(--success); }
+.sched__run--error .sched__run-icon { color: #ef4444; }
+.sched__run-when { color: var(--text-muted); white-space: nowrap; }
+.sched__run-detail { color: var(--text-secondary); }
+.sched__run-error { flex-basis: 100%; color: #ef4444; font-size: 11px; }
+.sched__run-empty { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
 .msg__footer { margin-top: 8px; }
 .slack-post { display: flex; align-items: center; gap: 8px; }
 .slack-post__channel {

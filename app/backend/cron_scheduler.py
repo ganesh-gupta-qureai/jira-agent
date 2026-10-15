@@ -35,11 +35,26 @@ async def _run_job(user_id: str, job_id: str) -> None:
     if job is None or not job.get("enabled", True):
         return
     try:
-        result = await execute_script(user_id, job["code"], job.get("channel"), job.get("send", False))
-        cron_jobs.record_run(user_id, job_id, ok=bool(result.get("ok")))
-    except Exception:
+        result = await execute_script(
+            user_id, job["code"], job.get("channel"), job.get("send", False), scheduled=True
+        )
+        error = None
+        if not result.get("ok"):
+            error = (result.get("stderr") or "").strip() or None
+        elif result.get("slack_error"):
+            error = f"posted=false: {result['slack_error']}"
+        cron_jobs.record_run(
+            user_id,
+            job_id,
+            ok=bool(result.get("ok")),
+            exit_code=result.get("exit_code"),
+            timed_out=bool(result.get("timed_out")),
+            posted_to_slack=bool(result.get("posted_to_slack")),
+            error=error,
+        )
+    except Exception as exc:
         logger.exception("cron job %s (user %s) failed", job_id, user_id)
-        cron_jobs.record_run(user_id, job_id, ok=False)
+        cron_jobs.record_run(user_id, job_id, ok=False, error=str(exc))
 
 
 def validate_cron(cron_expr: str) -> str | None:

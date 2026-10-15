@@ -49,6 +49,9 @@ def _read_all(user_id: str) -> list[dict]:
         if not j.get("owner"):
             j["owner"] = user_id  # self-heal jobs created before "owner" existed
             changed = True
+        if "runs" not in j:
+            j["runs"] = []  # self-heal jobs created before per-run logging existed
+            changed = True
     if changed:
         _write_all(user_id, jobs)
     return jobs
@@ -137,12 +140,64 @@ def set_enabled(user_id: str, job_id: str, enabled: bool) -> dict | None:
     return None
 
 
-def record_run(user_id: str, job_id: str, ok: bool) -> None:
+# Fields any of the three shared-account users may edit on a job that isn't
+# theirs -- deliberately excludes "id", "owner", "code", "created_at",
+# "last_run_at", "last_run_ok" (identity/history, not something an edit form
+# should touch) and "enabled" (that's set_enabled's job, via Pause/Resume).
+_EDITABLE_FIELDS = {"name", "cron_expr", "start_date", "end_date", "channel", "send"}
+
+
+def update_job(user_id: str, job_id: str, fields: dict) -> dict | None:
+    """Edit a job in place -- see _EDITABLE_FIELDS. `user_id` is the job's
+    actual owner (resolved via find_owner), not necessarily whoever is
+    making the request: this shared ops team can edit each other's
+    schedules, same as they can already pause/delete/promote them."""
+    jobs = _read_all(user_id)
+    for j in jobs:
+        if j["id"] == job_id:
+            for key, value in fields.items():
+                if key in _EDITABLE_FIELDS:
+                    j[key] = value
+            if not j.get("channel"):
+                j["channel"] = DEFAULT_TEST_CHANNEL
+            _write_all(user_id, jobs)
+            return j
+    return None
+
+
+# Per-job run log, newest first, for the Scheduled tab's expandable history --
+# "every scheduled automation should be viewable... with logs for each of its
+# run/success/fails" (2026-10-15). Capped so a frequently-firing job (e.g. a
+# "every 5 minutes" schedule) can't grow its JSON file without bound.
+_MAX_RUN_LOG = 50
+
+
+def record_run(
+    user_id: str,
+    job_id: str,
+    ok: bool,
+    exit_code: int | None = None,
+    timed_out: bool = False,
+    posted_to_slack: bool = False,
+    error: str | None = None,
+) -> None:
     jobs = _read_all(user_id)
     for j in jobs:
         if j["id"] == job_id:
             j["last_run_at"] = time.time()
             j["last_run_ok"] = ok
+            runs = j.setdefault("runs", [])
+            runs.insert(0, {
+                "at": j["last_run_at"],
+                "ok": ok,
+                "exit_code": exit_code,
+                "timed_out": timed_out,
+                "posted_to_slack": posted_to_slack,
+                # Trimmed, not the full stdout/stderr -- this is a log entry for
+                # the Scheduled tab, not a second copy of execution_history.py.
+                "error": error[:2000] if error else None,
+            })
+            del runs[_MAX_RUN_LOG:]
             break
     _write_all(user_id, jobs)
 

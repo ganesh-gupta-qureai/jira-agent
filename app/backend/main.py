@@ -180,6 +180,20 @@ class PromoteCronJobRequest(BaseModel):
     confirmed_production: bool = False
 
 
+class UpdateCronJobRequest(BaseModel):
+    # Edit an existing job's schedule/destination -- any of the three shared
+    # users can edit any job, same as they can already pause/delete/promote
+    # one they didn't create. Code isn't editable here: a different script
+    # needs its own fresh Execute/Schedule review, not a silent swap.
+    name: str
+    cron_expr: str
+    start_date: str | None = None
+    end_date: str | None = None
+    channel: str | None = None
+    send: bool = False
+    confirmed_production: bool = False
+
+
 @router.get("/api/health")
 async def health() -> dict:
     return {"ok": True}
@@ -409,6 +423,45 @@ async def delete_cron_job_route(job_id: str, user: str = Depends(current_user)) 
     cron_jobs.delete_job(owner, job_id)
     cron_scheduler.unschedule_job(owner, job_id)
     return {"ok": True}
+
+
+@router.put("/api/cron-jobs/{job_id}")
+async def update_cron_job_route(
+    job_id: str, req: UpdateCronJobRequest, user: str = Depends(current_user)
+) -> dict:
+    """Edit an existing job -- see UpdateCronJobRequest. Same validation as
+    creating one (cron_scheduler.validate_cron requires a cron expression, so
+    flipping an existing job over to "every N minutes" goes through this
+    route too, not just creation)."""
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="job needs a name")
+    if req.send and req.channel == PRODUCTION_SLACK_CHANNEL_ID and not req.confirmed_production:
+        raise HTTPException(
+            status_code=400,
+            detail="Scheduling a job that sends to the production channel requires explicit confirmation.",
+        )
+    error = cron_scheduler.validate_cron(req.cron_expr)
+    if error:
+        raise HTTPException(status_code=400, detail=f"invalid cron expression: {error}")
+    if req.start_date and req.end_date and req.end_date < req.start_date:
+        raise HTTPException(status_code=400, detail="end date can't be before start date")
+    owner = cron_jobs.find_owner(job_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    job = cron_jobs.update_job(
+        owner,
+        job_id,
+        {
+            "name": req.name.strip(),
+            "cron_expr": req.cron_expr.strip(),
+            "start_date": req.start_date,
+            "end_date": req.end_date,
+            "channel": req.channel,
+            "send": req.send,
+        },
+    )
+    cron_scheduler.schedule_job(owner, job)
+    return job
 
 
 @router.post("/api/cron-jobs/{job_id}/promote")

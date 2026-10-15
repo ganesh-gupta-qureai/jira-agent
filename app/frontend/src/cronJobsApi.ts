@@ -1,5 +1,15 @@
 import { apiUrl, bounceIfUnauthorized } from './api'
 
+// Mirrors backend/cron_jobs.py's per-run log entry (record_run).
+export type CronJobRun = {
+  at: number // unix seconds (float)
+  ok: boolean
+  exit_code: number | null
+  timed_out: boolean
+  posted_to_slack: boolean
+  error: string | null
+}
+
 // Mirrors backend/cron_jobs.py's record shape.
 export type CronJob = {
   id: string
@@ -15,6 +25,7 @@ export type CronJob = {
   enabled: boolean
   last_run_at: number | null
   last_run_ok: boolean | null
+  runs: CronJobRun[] // newest first, capped at 50 -- see cron_jobs._MAX_RUN_LOG
 }
 
 async function throwIfBad(res: Response): Promise<void> {
@@ -64,6 +75,33 @@ export async function setCronJobEnabled(id: string, enabled: boolean): Promise<C
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),
+  })
+  await throwIfBad(res)
+  return res.json()
+}
+
+export async function updateCronJob(
+  id: string,
+  name: string,
+  cron_expr: string,
+  start_date: string | null,
+  end_date: string | null,
+  channel: string | null,
+  send: boolean,
+  confirmedProduction: boolean,
+): Promise<CronJob> {
+  const res = await fetch(apiUrl(`/api/cron-jobs/${id}`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      cron_expr,
+      start_date,
+      end_date,
+      channel,
+      send,
+      confirmed_production: confirmedProduction,
+    }),
   })
   await throwIfBad(res)
   return res.json()

@@ -80,14 +80,26 @@ def list_conversations(user_id: str) -> list[dict]:
 # browser tab locks up parsing/rendering a multi-MB payload. Cap both the
 # per-field size and the total item count so a long chat still opens, just
 # with its oldest/largest content trimmed instead of the whole UI freezing.
+#
+# Assistant text gets its own, much larger cap (_MAX_TEXT_CHARS). A generated
+# automation script lives in the assistant's reply as a fenced code block
+# (Hard Rule #7 in system_prompt.md) -- that's what the UI's Execute button
+# reads and runs. Truncating it mid-script at the old shared 8,000-char cap
+# silently corrupted the script with a "... (truncated, N more chars)" tail
+# spliced into the code, and Execute then ran that broken copy, failing with
+# a SyntaxError (root-caused 2026-10-15; our largest real script so far is
+# ~16,500 chars, chu_weekly_report.py). Tool `result` (raw stdout/JSON dumps,
+# never re-executed) and tool_call `args` stay at the tight original cap --
+# they're display-only and were the actual source of the original bloat.
 _MAX_FIELD_CHARS = 8_000
+_MAX_TEXT_CHARS = 60_000
 _MAX_ITEMS = 250
 
 
-def _truncate(text: str) -> str:
-    if len(text) <= _MAX_FIELD_CHARS:
+def _truncate(text: str, limit: int = _MAX_FIELD_CHARS) -> str:
+    if len(text) <= limit:
         return text
-    return text[:_MAX_FIELD_CHARS] + f"\n... (truncated, {len(text) - _MAX_FIELD_CHARS} more chars)"
+    return text[:limit] + f"\n... (truncated, {len(text) - limit} more chars)"
 
 
 def get_conversation(user_id: str, session_id: str) -> list[dict] | None:
@@ -98,8 +110,9 @@ def get_conversation(user_id: str, session_id: str) -> list[dict] | None:
         {kind: "assistant_text", id, text}
         {kind: "tool_call", id, name, args, result}
 
-    Per-field text is capped at _MAX_FIELD_CHARS and the result is capped at
-    the most recent _MAX_ITEMS items -- see the comment above.
+    Assistant/user text is capped at _MAX_TEXT_CHARS, tool args/result at the
+    tighter _MAX_FIELD_CHARS, and the result is capped at the most recent
+    _MAX_ITEMS items -- see the comment above.
 
     NOTE: uses file order, correct for linear conversations. Rewound sessions
     (branching via parentUuid) could interleave branches — see the caveat in
@@ -131,7 +144,7 @@ def get_conversation(user_id: str, session_id: str) -> list[dict] | None:
                 content = e.get("message", {}).get("content")
                 if isinstance(content, str):
                     if content.strip():
-                        items.append({"kind": "user", "id": uid, "text": _truncate(content)})
+                        items.append({"kind": "user", "id": uid, "text": _truncate(content, _MAX_TEXT_CHARS)})
                 elif isinstance(content, list):
                     for b in content:
                         if not isinstance(b, dict):
@@ -150,14 +163,18 @@ def get_conversation(user_id: str, session_id: str) -> list[dict] | None:
                 content = e.get("message", {}).get("content", [])
                 if isinstance(content, str):
                     if content.strip():
-                        items.append({"kind": "assistant_text", "id": uid, "text": _truncate(content)})
+                        items.append({"kind": "assistant_text", "id": uid, "text": _truncate(content, _MAX_TEXT_CHARS)})
                 elif isinstance(content, list):
                     for j, b in enumerate(content):
                         if not isinstance(b, dict):
                             continue
                         if b.get("type") == "text" and b.get("text", "").strip():
                             items.append(
-                                {"kind": "assistant_text", "id": f"{uid}-{j}", "text": _truncate(b["text"])}
+                                {
+                                    "kind": "assistant_text",
+                                    "id": f"{uid}-{j}",
+                                    "text": _truncate(b["text"], _MAX_TEXT_CHARS),
+                                }
                             )
                         elif b.get("type") == "tool_use":
                             item = {

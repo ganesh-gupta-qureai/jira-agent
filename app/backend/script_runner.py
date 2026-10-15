@@ -256,7 +256,9 @@ def _post_to_slack(stdout: str, channel: str | None) -> str | None:
     return None
 
 
-async def execute_script(user_id: str, code: str, channel: str | None = None, send: bool = False) -> dict:
+async def execute_script(
+    user_id: str, code: str, channel: str | None = None, send: bool = False, scheduled: bool = False
+) -> dict:
     """Write `code` to a throwaway file in the user's own workspace (so it
     sees the same scripts/.env/docs symlinks a `uv run scripts/...` call
     would) and run it via `uv run`, same as a human would from a terminal.
@@ -280,7 +282,16 @@ async def execute_script(user_id: str, code: str, channel: str | None = None, se
     the exact shape of the 2026-09-29 incident (a stored job with `send`
     effectively on but no channel chosen fell through to the container's
     bare CHU_SLACK_CHANNEL_ID env var, which resolved to production).
-    Production sends must always name their channel explicitly."""
+    Production sends must always name their channel explicitly.
+
+    `scheduled` is True only when cron_scheduler calls this -- it sets
+    JIRA_AGENT_SCHEDULED_RUN=1 so a script's own same-day dedup guard (e.g.
+    chu_insufficient_info_reminder.py) can tell an unattended cron fire apart
+    from a human clicking Execute/Post. Root-caused 2026-10-15: a human
+    deliberately re-running/re-posting should never be hard-blocked by that
+    guard -- only an automatic re-fire (e.g. a redeploy mid-day re-triggering
+    the same cron minute) should actually skip. A manual run gets a soft
+    warning instead and still posts."""
     if send and not channel:
         return {
             "ok": False,
@@ -303,6 +314,8 @@ async def execute_script(user_id: str, code: str, channel: str | None = None, se
         env["CHU_SLACK_CHANNEL_ID"] = channel
     if send:
         env["CHU_REPORT_SEND"] = "1"
+    if scheduled:
+        env["JIRA_AGENT_SCHEDULED_RUN"] = "1"
     # Every script modeled on scripts/jira_search.py's own documented pattern
     # does `sys.path.insert(0, str(Path(__file__).resolve().parent))` to
     # import _jira_client -- that only adds the SCRIPT's own directory, which

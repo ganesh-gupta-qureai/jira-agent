@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 // hand-write cron syntax. Start/end date are separate fields passed straight
 // through to the backend (APScheduler's CronTrigger supports them natively).
 
-type Frequency = 'daily' | 'weekly' | 'monthly'
+type Frequency = 'minutes' | 'daily' | 'weekly' | 'monthly'
 
 const WEEKDAYS: { label: string; value: number }[] = [
   { label: 'Sun', value: 0 },
@@ -17,7 +17,25 @@ const WEEKDAYS: { label: string; value: number }[] = [
   { label: 'Sat', value: 6 },
 ]
 
-function buildCronExpr(freq: Frequency, time: string, weekdays: number[], dayOfMonth: number): string {
+const FREQUENCIES: { value: Frequency; label: string }[] = [
+  { value: 'minutes', label: 'Minutes' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+]
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function buildCronExpr(
+  freq: Frequency,
+  time: string,
+  weekdays: number[],
+  dayOfMonth: number,
+  minuteInterval: number,
+): string {
+  if (freq === 'minutes') return `*/${minuteInterval} * * * *`
   const [hh, mm] = time.split(':').map((n) => parseInt(n, 10) || 0)
   if (freq === 'daily') return `${mm} ${hh} * * *`
   if (freq === 'monthly') return `${mm} ${hh} ${dayOfMonth} * *`
@@ -25,7 +43,14 @@ function buildCronExpr(freq: Frequency, time: string, weekdays: number[], dayOfM
   return `${mm} ${hh} * * ${days}`
 }
 
-function summarize(freq: Frequency, time: string, weekdays: number[], dayOfMonth: number): string {
+function summarize(
+  freq: Frequency,
+  time: string,
+  weekdays: number[],
+  dayOfMonth: number,
+  minuteInterval: number,
+): string {
+  if (freq === 'minutes') return `Every ${minuteInterval} minute${minuteInterval === 1 ? '' : 's'}`
   if (freq === 'daily') return `Every day at ${time}`
   if (freq === 'monthly') return `Day ${dayOfMonth} of every month at ${time}`
   const names = weekdays.length
@@ -57,13 +82,22 @@ export function ScheduleForm({
   const [time, setTime] = useState('09:00')
   const [weekdays, setWeekdays] = useState<number[]>([1]) // Monday
   const [dayOfMonth, setDayOfMonth] = useState(1)
-  const [useStart, setUseStart] = useState(false)
-  const [startDate, setStartDate] = useState('')
+  const [minuteInterval, setMinuteInterval] = useState(5)
+  // Start date defaults ON with today prefilled -- a new schedule should
+  // start firing immediately unless the user deliberately pushes it out.
+  const [useStart, setUseStart] = useState(true)
+  const [startDate, setStartDate] = useState(todayIso)
   const [useEnd, setUseEnd] = useState(false)
   const [endDate, setEndDate] = useState('')
 
-  const cronExpr = useMemo(() => buildCronExpr(freq, time, weekdays, dayOfMonth), [freq, time, weekdays, dayOfMonth])
-  const summary = useMemo(() => summarize(freq, time, weekdays, dayOfMonth), [freq, time, weekdays, dayOfMonth])
+  const cronExpr = useMemo(
+    () => buildCronExpr(freq, time, weekdays, dayOfMonth, minuteInterval),
+    [freq, time, weekdays, dayOfMonth, minuteInterval],
+  )
+  const summary = useMemo(
+    () => summarize(freq, time, weekdays, dayOfMonth, minuteInterval),
+    [freq, time, weekdays, dayOfMonth, minuteInterval],
+  )
 
   function toggleWeekday(v: number) {
     setWeekdays((ws) => (ws.includes(v) ? ws.filter((d) => d !== v) : [...ws, v]))
@@ -92,18 +126,35 @@ export function ScheduleForm({
       <div className="sched-form__row">
         <span className="sched-form__label">Repeat</span>
         <div className="sched-form__seg">
-          {(['daily', 'weekly', 'monthly'] as Frequency[]).map((f) => (
+          {FREQUENCIES.map((f) => (
             <button
-              key={f}
+              key={f.value}
               type="button"
-              className={`sched-form__seg-btn ${freq === f ? 'sched-form__seg-btn--active' : ''}`}
-              onClick={() => setFreq(f)}
+              className={`sched-form__seg-btn ${freq === f.value ? 'sched-form__seg-btn--active' : ''}`}
+              onClick={() => setFreq(f.value)}
             >
-              {f[0].toUpperCase() + f.slice(1)}
+              {f.label}
             </button>
           ))}
         </div>
       </div>
+
+      {freq === 'minutes' && (
+        <div className="sched-form__row">
+          <span className="sched-form__label">Every</span>
+          <select
+            className="sched-form__select"
+            value={minuteInterval}
+            onChange={(e) => setMinuteInterval(parseInt(e.target.value, 10))}
+          >
+            {[1, 2, 5, 10, 15, 20, 30, 45].map((n) => (
+              <option key={n} value={n}>
+                {n} minute{n === 1 ? '' : 's'}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {freq === 'weekly' && (
         <div className="sched-form__row">
@@ -140,24 +191,28 @@ export function ScheduleForm({
         </div>
       )}
 
-      <div className="sched-form__row">
-        <span className="sched-form__label">Time (UTC)</span>
-        <input
-          type="time"
-          className="sched-form__input sched-form__input--time"
-          value={time}
-          onChange={(e) => setTime(e.target.value || '09:00')}
-        />
-      </div>
-      {/* The backend scheduler (APScheduler) runs on the container's system
-          clock, which is UTC -- confirmed live 2026-10-14. buildCronExpr
-          below passes this value straight through with no conversion, so a
-          user entering their own local time (e.g. 9am IST) here would
-          silently schedule it for 9am UTC instead, 5.5 hours off. Root-caused
-          after nearly shipping exactly that mistake for Automation 4. */}
-      <div className="sched-form__hint">
-        Enter the time in UTC, not your local time — e.g. 9:00 AM IST is 03:30 UTC.
-      </div>
+      {freq !== 'minutes' && (
+        <>
+          <div className="sched-form__row">
+            <span className="sched-form__label">Time (UTC)</span>
+            <input
+              type="time"
+              className="sched-form__input sched-form__input--time"
+              value={time}
+              onChange={(e) => setTime(e.target.value || '09:00')}
+            />
+          </div>
+          {/* The backend scheduler (APScheduler) runs on the container's system
+              clock, which is UTC -- confirmed live 2026-10-14. buildCronExpr
+              below passes this value straight through with no conversion, so a
+              user entering their own local time (e.g. 9am IST) here would
+              silently schedule it for 9am UTC instead, 5.5 hours off. Root-caused
+              after nearly shipping exactly that mistake for Automation 4. */}
+          <div className="sched-form__hint">
+            Enter the time in UTC, not your local time — e.g. 9:00 AM IST is 03:30 UTC.
+          </div>
+        </>
+      )}
 
       <div className="sched-form__row">
         <label className="sched-form__checkbox">
@@ -177,7 +232,7 @@ export function ScheduleForm({
       <div className="sched-form__row">
         <label className="sched-form__checkbox">
           <input type="checkbox" checked={useEnd} onChange={(e) => setUseEnd(e.target.checked)} />
-          End date
+          End date (optional)
         </label>
         {useEnd && (
           <input

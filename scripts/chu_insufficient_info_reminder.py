@@ -14,9 +14,12 @@ Rules (confirmed, same waiting-time logic as chu_missing_product_ticket.py):
   * No status history -> skipped and reported on stderr, never guessed.
   * Nothing qualifies -> nothing is printed to stdout and nothing is sent.
   * Same-day dedup: on --send, if this reminder was already posted to the same
-    channel today (IST) nothing is sent. Checked against Slack channel history
-    first, then a marker file under /data (USERS_ROOT's parent) as a fallback;
-    both survive redeploys.
+    channel today (IST), an unattended cron fire skips (protects against a
+    redeploy mid-day re-registering and double-firing the same schedule); a
+    human running it manually (Execute/Post) gets a warning instead and still
+    posts -- a deliberate manual re-run is never blocked. Checked against
+    Slack channel history first, then a marker file under /data (USERS_ROOT's
+    parent) as a fallback; both survive redeploys.
 
 Read-only against Jira (GET / search only). Exactly ONE Slack message is sent
 (split only if it would exceed Slack's size limit).
@@ -218,8 +221,19 @@ def main() -> None:
         if not token:
             sys.exit("SLACK_BOT_TOKEN is not set -- see app/.env.example")
         if already_posted_today(token, args.channel):
-            print(f"Already posted to {args.channel} today; skipping.", file=sys.stderr)
-            return
+            # JIRA_AGENT_SCHEDULED_RUN is set only for an unattended cron fire
+            # (see script_runner.py's execute_script) -- that's the one case
+            # this guard should actually block, e.g. a redeploy mid-day
+            # re-registering the same cron minute and firing twice. A human
+            # clicking Execute or Post to Slack is a deliberate, explicit
+            # request and must always be allowed to post, as many times as
+            # they want (root-caused 2026-10-15: this used to hard-skip a
+            # manual re-run too) -- so a manual run only gets a warning here,
+            # never a skip.
+            if os.environ.get("JIRA_AGENT_SCHEDULED_RUN") == "1":
+                print(f"Already posted to {args.channel} today; skipping.", file=sys.stderr)
+                return
+            print(f"WARNING: already posted to {args.channel} today -- posting again anyway.", file=sys.stderr)
 
     try:
         tickets, problems = collect()

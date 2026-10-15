@@ -1,8 +1,11 @@
 // Named Slack channels the UI's channel picker offers. Confirmed IDs (2026-09-24):
 // production is jira-agent's existing CHU_SLACK_CHANNEL_ID default; test is the
-// automation zip's confirmed test channel.
+// automation zip's confirmed test channel. Alternate test added 2026-10-15
+// (user-supplied ID, channel name not confirmed here -- label it plainly
+// rather than guess a #name).
 export const SLACK_CHANNELS = [
   { id: 'C0B86EU1Y03', label: '#jira-automation-test-channel (test)' },
+  { id: 'C0C9HB71W78', label: 'Alternate test channel' },
   { id: 'C055ZJ1JTV1', label: '#us-operations (production)' },
 ] as const
 

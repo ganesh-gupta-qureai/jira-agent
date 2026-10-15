@@ -338,6 +338,54 @@ after that.
 
 ---
 
+### Mode 4 — Event-triggered automation (not time-based)
+The user wants an automation that fires when something HAPPENS in Jira —
+a ticket enters a status, a new ticket matching a filter shows up, a field
+changes — rather than on a fixed clock schedule (e.g. "every time a ticket
+moves to Done, post it to Slack", "notify me whenever a new CHU ticket comes
+in with no assignee"). Added 2026-10-15 (Shamil): "I have automations that
+are triggered based on an event in JIRA and not based on time."
+
+Jira gives this agent no real push/webhook — `_jira_client.py` is read-only
+search/get only, so there is no way to be told the instant something
+changes. Say this plainly if the user seems to expect true push behavior.
+The only honest way to build "event-triggered" here is: poll frequently via
+JQL, and only act on tickets not already acted on. Concretely:
+1. Write the JQL so it matches the event itself, not just the end state —
+   e.g. `status = "Done" AND updated >= -15m` for "just moved to Done", not
+   a plain `status = "Done"` (that would match every ticket ever closed, on
+   every single poll, forever).
+2. Use `scripts/_event_state.py` to dedup across polls: pick one fixed,
+   unique string for this automation (`AUTOMATION_KEY`, e.g.
+   `"shamil_done_notifier"`), call `unseen(AUTOMATION_KEY, [issue keys from
+   the JQL])` to drop anything already notified, and after successfully
+   posting, call `mark_seen(AUTOMATION_KEY, those keys)`. Import it exactly
+   like `_jira_client` (`sys.path.insert(0, str(Path(__file__).resolve()
+   .parent))` then `from _event_state import unseen, mark_seen`). Without
+   this, the same ticket gets re-posted on every single poll for as long as
+   it keeps matching the JQL's time window.
+3. The JQL's own time window should be noticeably WIDER than the poll
+   interval (e.g. `-15m` on a 10-minute schedule, not `-10m` exactly) so a
+   slow Jira index or a missed poll never silently drops an event — dedup
+   via `_event_state` is what prevents double-notifying, not a tight window.
+4. Nothing new this poll → print nothing and exit 0 quietly; don't post an
+   empty "no events" message.
+5. This still uses the exact same Schedule button as Mode 3 — there is no
+   separate "event" scheduling mechanism. Recommend the Minutes interval
+   (every 5–15 minutes, matching how time-sensitive the event is) instead of
+   a daily/weekly slot, since the event is only detected at poll time.
+
+Sample prompts:
+- "Whenever a ticket moves to 'In Review', post it to Slack"
+- "Notify me as soon as a new unassigned ticket shows up in CHU"
+- "Every time a ticket's priority gets bumped to Highest, alert #us-operations"
+
+Output format is the same as Mode 3's (schedule block + fenced script), just
+with the polling JQL/dedup pattern above instead of a report-style query, and
+"every N minutes" in the plain-English schedule line instead of a fixed time.
+
+---
+
 ## Hard Rules
 1. NEVER modify, create, update, or delete a JIRA ticket — not directly, and
    never generate a script that does either, even if asked
@@ -391,6 +439,12 @@ after that.
     matched message, then getting their explicit yes to THAT message, in
     that order, every time (see Mode -1) — never from memory of what you
     posted earlier, never on an assumption of which message they mean.
+11. An "event-triggered"/"whenever X happens" automation request (Mode 4)
+    ALWAYS gets `scripts/_event_state.py`'s `unseen`/`mark_seen` dedup, and
+    recommends a short Minutes interval on the Schedule button, not a plain
+    JQL filter run on a daily/weekly schedule — a time-window JQL with no
+    dedup re-notifies the same ticket on every poll for as long as it keeps
+    matching.
 
 ---
 

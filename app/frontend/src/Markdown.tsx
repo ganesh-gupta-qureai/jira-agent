@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { apiUrl, bounceIfUnauthorized } from './api'
-import { createCronJob } from './cronJobsApi'
+import { createCronJob, updateCronJob } from './cronJobsApi'
+import { clearEditingJob, getEditingJob } from './editingJob'
 import { saveScript } from './savedScriptsApi'
 import { ScheduleForm, type ScheduleValues } from './ScheduleForm'
 import { DEFAULT_SLACK_CHANNEL, PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } from './slackChannels'
@@ -298,20 +299,36 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
     setSchedBusy(true)
     setSchedError(null)
     try {
-      await createCronJob(
-        values.name,
-        code,
-        values.cronExpr,
-        values.startDate,
-        values.endDate,
-        channel,
-        send,
-        confirmedProduction,
-      )
+      const editing = getEditingJob(threadId)
+      if (editing) {
+        await updateCronJob(
+          editing.id,
+          values.name,
+          values.cronExpr,
+          values.startDate,
+          values.endDate,
+          channel,
+          send,
+          confirmedProduction,
+          code,
+        )
+        if (threadId) clearEditingJob(threadId)
+      } else {
+        await createCronJob(
+          values.name,
+          code,
+          values.cronExpr,
+          values.startDate,
+          values.endDate,
+          channel,
+          send,
+          confirmedProduction,
+        )
+      }
       setSchedDone(true)
       setSchedOpen(false)
     } catch (err) {
-      setSchedError(err instanceof Error ? err.message : 'Could not create schedule')
+      setSchedError(err instanceof Error ? err.message : 'Could not save schedule')
     } finally {
       setSchedBusy(false)
     }
@@ -395,6 +412,8 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
           onCancel={() => setSchedOpen(false)}
           busy={schedBusy}
           error={schedError}
+          submitLabel={getEditingJob(threadId) ? 'Save changes' : 'Create schedule'}
+          busyLabel={getEditingJob(threadId) ? 'Saving…' : 'Creating…'}
         />
       )}
       {error && <div className="md-codeblock__result md-codeblock__result--error">{error}</div>}

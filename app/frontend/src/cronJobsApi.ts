@@ -89,6 +89,7 @@ export async function updateCronJob(
   channel: string | null,
   send: boolean,
   confirmedProduction: boolean,
+  code?: string, // only the "Edit script" chat flow passes this -- see UpdateCronJobRequest
 ): Promise<CronJob> {
   const res = await fetch(apiUrl(`/api/cron-jobs/${id}`), {
     method: 'PUT',
@@ -100,6 +101,7 @@ export async function updateCronJob(
       end_date,
       channel,
       send,
+      code,
       confirmed_production: confirmedProduction,
     }),
   })

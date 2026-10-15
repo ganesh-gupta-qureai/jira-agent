@@ -71,11 +71,15 @@ export function ScheduleForm({
   onCancel,
   busy,
   error,
+  submitLabel = 'Create schedule',
+  busyLabel = 'Creating…',
 }: {
   onSubmit: (values: ScheduleValues) => void
   onCancel: () => void
   busy: boolean
   error: string | null
+  submitLabel?: string
+  busyLabel?: string
 }) {
   const [name, setName] = useState('')
   const [freq, setFreq] = useState<Frequency>('weekly')
@@ -255,7 +259,7 @@ export function ScheduleForm({
 
       <div className="sched-form__actions">
         <button className="md-codeblock__execute" onClick={submit} disabled={busy || !name.trim()}>
-          {busy ? 'Creating…' : 'Create schedule'}
+          {busy ? busyLabel : submitLabel}
         </button>
         <button className="md-codeblock__download" onClick={onCancel}>
           Cancel

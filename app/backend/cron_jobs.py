@@ -141,10 +141,15 @@ def set_enabled(user_id: str, job_id: str, enabled: bool) -> dict | None:
 
 
 # Fields any of the three shared-account users may edit on a job that isn't
-# theirs -- deliberately excludes "id", "owner", "code", "created_at",
-# "last_run_at", "last_run_ok" (identity/history, not something an edit form
-# should touch) and "enabled" (that's set_enabled's job, via Pause/Resume).
-_EDITABLE_FIELDS = {"name", "cron_expr", "start_date", "end_date", "channel", "send"}
+# theirs -- deliberately excludes "id", "owner", "created_at", "last_run_at",
+# "last_run_ok", "runs" (identity/history, not something an edit form should
+# touch) and "enabled" (that's set_enabled's job, via Pause/Resume). "code" is
+# here for the "Edit script" chat flow (App.tsx's editAutomationInChat +
+# Markdown.tsx's Schedule button) -- main.py only includes it in the update
+# when that flow explicitly sent a revised script; the plain "Edit schedule"
+# metadata form never sends it, so a job's code can't be silently swapped by
+# an unrelated edit.
+_EDITABLE_FIELDS = {"name", "cron_expr", "start_date", "end_date", "channel", "send", "code"}
 
 
 def update_job(user_id: str, job_id: str, fields: dict) -> dict | None:

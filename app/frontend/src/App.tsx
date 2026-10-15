@@ -17,6 +17,9 @@ import ProjectsPanel from './ProjectsPanel'
 import { fetchProjects } from './projectsApi'
 import SavedScriptsPanel from './SavedScriptsPanel'
 import ScheduledJobs from './ScheduledJobs'
+import type { CronJob } from './cronJobsApi'
+import { SLACK_CHANNELS } from './slackChannels'
+import { clearEditingJob, EDITING_JOB_CLEARED_EVENT, getEditingJob, setEditingJob, type EditingJob } from './editingJob'
 import { renderToolBody } from './tools/registry'
 import './App.css'
 
@@ -54,6 +57,10 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [state, setState] = useState(initialChatState)
   const [draft, setDraft] = useState('')
+  // Mirrors editingJob.ts's localStorage marker for the ACTIVE thread only --
+  // kept in state (not read from storage at render time) so the "Cancel"
+  // button below actually re-renders when clicked.
+  const [editingJob, setEditingJobState] = useState<EditingJob | null>(() => getEditingJob(readUrl().thread))
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -103,6 +110,17 @@ export default function App() {
       writeUrl(t, null)
     }
   }, [auth?.loggedIn, threadId])
+
+  // Markdown.tsx's Schedule button clears the editing marker itself once it
+  // successfully updates the job -- react to that here so the banner (held
+  // as React state, not read live from storage) disappears too.
+  useEffect(() => {
+    function onCleared(e: Event) {
+      if ((e as CustomEvent).detail === threadId) setEditingJobState(null)
+    }
+    window.addEventListener(EDITING_JOB_CLEARED_EVENT, onCleared)
+    return () => window.removeEventListener(EDITING_JOB_CLEARED_EVENT, onCleared)
+  }, [threadId])
 
   // Subscribe to the active thread's resumable SSE. Re-runs when the THREAD
   // changes (not on session adoption); on refresh this re-attaches to an
@@ -154,6 +172,43 @@ export default function App() {
     setState(initialChatState)
     setDraft('')
     resetComposerHeight()
+    setEditingJobState(null)
+  }
+
+  // "Edit script" from the Scheduled tab: open a fresh chat seeded with the
+  // job's current script so the user can iterate on the logic itself (not
+  // just the schedule/channel fields the inline "Edit schedule" form covers),
+  // then tag that new thread as "editing job X" so its first Schedule click
+  // updates this job in place instead of creating a duplicate one.
+  function editAutomationInChat(job: CronJob) {
+    const t = crypto.randomUUID()
+    setThreadId(t)
+    setSessionId(null)
+    writeUrl(t, null)
+    setState(initialChatState)
+    setDraft('')
+    resetComposerHeight()
+    setView('chat')
+    setEditingJob(t, { id: job.id, name: job.name })
+    setEditingJobState({ id: job.id, name: job.name })
+
+    const channel = SLACK_CHANNELS.find((c) => c.id === job.channel)?.label ?? job.channel ?? 'default channel'
+    const seed =
+      `I want to edit this existing scheduled automation "${job.name}" ` +
+      `(cron: \`${job.cron_expr}\`, channel: ${channel}, send mode: ${job.send ? 'actually sends' : 'preview only'}). ` +
+      `Here is its current script:\n\n\`\`\`python\n${job.code}\n\`\`\`\n\n` +
+      `Let's iterate on it — ask me what to change or suggest improvements, then show me the updated script ` +
+      `when it's ready so I can re-save it.`
+
+    setState((s) => ({ ...s, running: true, error: null }))
+    fetch(apiUrl('/api/chat'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: seed, thread_id: t, session_id: null, project_id: selectedProjectId }),
+    }).catch((err) => {
+      console.error(err)
+      setState((s) => ({ ...s, running: false }))
+    })
   }
 
   // Open a past conversation: thread_id == its session_id; the backend seeds the
@@ -163,6 +218,7 @@ export default function App() {
     setThreadId(id)
     setSessionId(id)
     writeUrl(id, id)
+    setEditingJobState(getEditingJob(id))
   }
 
   // Fire-and-forget a turn trigger; the live SSE subscription drives the UI.
@@ -322,9 +378,24 @@ export default function App() {
         {view === 'history' ? (
           <ExecutionHistory />
         ) : view === 'schedules' ? (
-          <ScheduledJobs />
+          <ScheduledJobs onEditInChat={editAutomationInChat} />
         ) : (
           <>
+        {editingJob && (
+          <div className="editing-banner">
+            Editing automation "{editingJob.name}" — clicking Schedule below will update this job instead of
+            creating a new one.
+            <button
+              className="editing-banner__clear"
+              onClick={() => {
+                if (threadId) clearEditingJob(threadId)
+                setEditingJobState(null)
+              }}
+            >
+              Cancel, create new instead
+            </button>
+          </div>
+        )}
         <div className="chat" ref={scrollRef}>
           {state.items.length === 0 && !state.running && (
             <div className="empty">

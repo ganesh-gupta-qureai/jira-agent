@@ -153,7 +153,15 @@ function EditJobForm({
   )
 }
 
-function JobRow({ job, onChanged }: { job: CronJob; onChanged: (job: CronJob | null, id: string) => void }) {
+function JobRow({
+  job,
+  onChanged,
+  onEditInChat,
+}: {
+  job: CronJob
+  onChanged: (job: CronJob | null, id: string) => void
+  onEditInChat: (job: CronJob) => void
+}) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -266,8 +274,20 @@ function JobRow({ job, onChanged }: { job: CronJob; onChanged: (job: CronJob | n
                 setEditing(true)
               }}
               disabled={busy}
+              title="Change the name, cron schedule, channel, send mode, or dates"
             >
-              Edit
+              Edit schedule
+            </button>
+            <button
+              className="btn btn--ghost"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEditInChat(job)
+              }}
+              disabled={busy}
+              title="Open a new chat with this automation's script to revise the logic itself"
+            >
+              Edit script
             </button>
             {job.channel !== PRODUCTION_SLACK_CHANNEL_ID && (
               <button className="btn btn--solid" onClick={handlePromote} disabled={busy}>
@@ -296,7 +316,7 @@ function JobRow({ job, onChanged }: { job: CronJob; onChanged: (job: CronJob | n
   )
 }
 
-export default function ScheduledJobs() {
+export default function ScheduledJobs({ onEditInChat }: { onEditInChat: (job: CronJob) => void }) {
   const queryClient = useQueryClient()
   const { data: jobs = [], isLoading } = useQuery({
     queryKey: ['cron-jobs'],
@@ -323,7 +343,7 @@ export default function ScheduledJobs() {
         </div>
       )}
       {jobs.map((job) => (
-        <JobRow key={job.id} job={job} onChanged={applyChange} />
+        <JobRow key={job.id} job={job} onChanged={applyChange} onEditInChat={onEditInChat} />
       ))}
     </div>
   )

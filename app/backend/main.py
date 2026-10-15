@@ -183,14 +183,18 @@ class PromoteCronJobRequest(BaseModel):
 class UpdateCronJobRequest(BaseModel):
     # Edit an existing job's schedule/destination -- any of the three shared
     # users can edit any job, same as they can already pause/delete/promote
-    # one they didn't create. Code isn't editable here: a different script
-    # needs its own fresh Execute/Schedule review, not a silent swap.
+    # one they didn't create. `code` is optional and only set when provided:
+    # the plain "Edit schedule" metadata form never sends it (a different
+    # script needs its own fresh Execute/Schedule review, not a silent swap),
+    # but the "Edit script" chat flow (App.tsx's editAutomationInChat) does,
+    # once the user is happy with a revised script and clicks Schedule.
     name: str
     cron_expr: str
     start_date: str | None = None
     end_date: str | None = None
     channel: str | None = None
     send: bool = False
+    code: str | None = None
     confirmed_production: bool = False
 
 
@@ -448,18 +452,17 @@ async def update_cron_job_route(
     owner = cron_jobs.find_owner(job_id)
     if owner is None:
         raise HTTPException(status_code=404, detail="job not found")
-    job = cron_jobs.update_job(
-        owner,
-        job_id,
-        {
-            "name": req.name.strip(),
-            "cron_expr": req.cron_expr.strip(),
-            "start_date": req.start_date,
-            "end_date": req.end_date,
-            "channel": req.channel,
-            "send": req.send,
-        },
-    )
+    fields = {
+        "name": req.name.strip(),
+        "cron_expr": req.cron_expr.strip(),
+        "start_date": req.start_date,
+        "end_date": req.end_date,
+        "channel": req.channel,
+        "send": req.send,
+    }
+    if req.code is not None and req.code.strip():
+        fields["code"] = req.code
+    job = cron_jobs.update_job(owner, job_id, fields)
     cron_scheduler.schedule_job(owner, job)
     return job
 

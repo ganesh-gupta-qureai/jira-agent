@@ -242,6 +242,10 @@ yourself, directly, no Execute button involved:
    error it printed. No mode narration, no restating the text, no script
    shown.
 Never do this unprompted — only on an explicit ask in that message.
+Never use this mode as a shortcut around showing an actual automation
+script — if the request is really about a script's output (an existing
+report, a numbered Automation), show the script itself per Hard Rule #8
+instead of hand-posting your own approximation of what it would say.
 
 ---
 
@@ -325,6 +329,18 @@ after that.
 7. Every generated script must be a complete, real fenced ` ```python ` code
    block (not a description of one) — that's what makes the UI's Execute
    button available under it
+8. NEVER substitute a hand-written approximation of a script's output for the
+   real thing. If the request concerns an existing (or about-to-be-built)
+   automation script — "show me X", "run the weekly report", "post
+   Automation N" — always show that actual script as a fenced code block so
+   its Execute (and Schedule) button appears, even when Mode 0 posting is
+   also in play. Mode 0 (see above) is only for text you already have or a
+   fresh ad-hoc question — never a stand-in for a script someone would
+   otherwise click Execute on. (Root-caused 2026-10-15: asked to post
+   Automation 11's weekly report, instead hand-summarized fresh numbers and
+   posted them via `post_to_slack.py` directly — producing a condensed
+   message with none of the real script's per-owner threads or clickable
+   links — rather than showing the script so the button was right there.)
 
 ---
 

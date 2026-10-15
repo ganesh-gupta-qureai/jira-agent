@@ -38,6 +38,7 @@ import projects
 from runlog import get_runlog
 import saved_scripts
 from script_runner import PRODUCTION_SLACK_CHANNEL_ID, execute_script
+from slack_messages import SlackConfigError, delete_message, list_bot_messages
 
 
 class _TurnTrace:
@@ -582,6 +583,60 @@ async def promote_cron_job_route(
     job = cron_jobs.promote_to_production(owner, job_id, PRODUCTION_SLACK_CHANNEL_ID)
     cron_scheduler.schedule_job(owner, job)
     return job
+
+
+class DeleteSlackMessageRequest(BaseModel):
+    channel: str
+    ts: str
+
+
+class UndoLastSlackPostRequest(BaseModel):
+    channel: str
+
+
+@router.get("/api/slack-messages")
+async def list_slack_messages_route(
+    channel: str, limit: int = 20, user: str = Depends(current_user)
+) -> list[dict]:
+    """This bot's own recent messages in `channel` -- lets any of the 3
+    shared users browse and delete a specific past post, from any source
+    (Execute's auto-poster, a script's own direct Slack calls, Mode 0,
+    or a real cron run), not just ones made after this feature shipped.
+    See slack_messages.py."""
+    try:
+        return list_bot_messages(channel, limit=limit)
+    except SlackConfigError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/api/slack-messages/delete")
+async def delete_slack_message_route(
+    req: DeleteSlackMessageRequest, user: str = Depends(current_user)
+) -> dict:
+    error = delete_message(req.channel, req.ts)
+    if error:
+        raise HTTPException(status_code=502, detail=error)
+    return {"ok": True}
+
+
+@router.post("/api/slack-messages/undo-last")
+async def undo_last_slack_post_route(
+    req: UndoLastSlackPostRequest, user: str = Depends(current_user)
+) -> dict:
+    """Deletes the single most recent message this bot posted to `channel`.
+    Returns the deleted message's text so the UI can show what actually got
+    removed (the confirm dialog shows it BEFORE this is called; this is the
+    source of truth for what the dialog displayed)."""
+    try:
+        recent = list_bot_messages(req.channel, limit=1)
+    except SlackConfigError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not recent:
+        raise HTTPException(status_code=404, detail="No recent messages from this bot in that channel.")
+    error = delete_message(req.channel, recent[0]["ts"])
+    if error:
+        raise HTTPException(status_code=502, detail=error)
+    return {"ok": True, "deleted": recent[0]}
 
 
 @router.get("/api/conversations")

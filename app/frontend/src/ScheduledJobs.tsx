@@ -14,6 +14,7 @@ import {
   type ExecuteResult,
 } from './cronJobsApi'
 import { highlightPython } from './Markdown'
+import { RecentSlackPosts, UndoLastPostButton } from './RecentSlackPosts'
 import { ScheduleForm, type ScheduleValues } from './ScheduleForm'
 import { formatAgo, formatLocalDateTime } from './formatAgo'
 import { PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } from './slackChannels'
@@ -281,6 +282,11 @@ function JobRow({
               ))}
             </div>
           )}
+          <div className="history__label">slack posts in this channel</div>
+          <div className="slack-posts__actions">
+            <RecentSlackPosts channel={job.channel ?? SLACK_CHANNELS[0].id} />
+            {!archivedView && <UndoLastPostButton channel={job.channel ?? SLACK_CHANNELS[0].id} />}
+          </div>
           <div className="history__label">script</div>
           <pre className="md-pre">
             <code>{highlightPython(job.code)}</code>

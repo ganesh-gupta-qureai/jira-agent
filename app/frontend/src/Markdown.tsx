@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { apiUrl, bounceIfUnauthorized } from './api'
 import { createCronJob, updateCronJob } from './cronJobsApi'
 import { clearEditingJob, getEditingJob } from './editingJob'
+import { RecentSlackPosts, UndoLastPostButton } from './RecentSlackPosts'
 import { saveScript } from './savedScriptsApi'
 import { ScheduleForm, type ScheduleValues } from './ScheduleForm'
 import { DEFAULT_SLACK_CHANNEL, PRODUCTION_SLACK_CHANNEL_ID, SLACK_CHANNELS } from './slackChannels'
@@ -410,7 +411,9 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
                 Actually send
               </label>
             )}
+            {executable && <UndoLastPostButton channel={channel} />}
           </div>
+          {executable && <RecentSlackPosts channel={channel} />}
         </div>
       )}
       {schedOpen && (

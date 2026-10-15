@@ -256,6 +256,11 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
 
   async function execute() {
     if (running) return
+    // A repeat click on the same code block is worth a pause -- most of the
+    // time it's deliberate re-testing, but it's also exactly the shape of an
+    // accidental double-run. Only asks from the second run onward; the first
+    // Execute always goes straight through.
+    if (result && !window.confirm('This has already been executed. Execute it again?')) return
     let confirmedProduction = false
     if (send && channel === PRODUCTION_SLACK_CHANNEL_ID) {
       const ok = window.confirm(

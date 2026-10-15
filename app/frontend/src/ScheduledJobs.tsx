@@ -169,6 +169,9 @@ function JobRow({
   async function handleExecute(e: React.MouseEvent) {
     e.stopPropagation()
     if (execBusy) return
+    // A repeat click is worth a pause -- same reasoning as the chat
+    // composer's own Execute button. Only asks from the second run onward.
+    if (execResult && !window.confirm('This has already been executed. Execute it again?')) return
     let confirmedProduction = false
     if (execSend && execChannel === PRODUCTION_SLACK_CHANNEL_ID) {
       if (

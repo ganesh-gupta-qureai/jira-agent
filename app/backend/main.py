@@ -735,7 +735,12 @@ async def delete_project_doc(project_id: str, doc_id: str, user: str = Depends(c
     return {"ok": True}
 
 
-# --- Saved scripts (per-chat, view-only -- never executed from here) -------
+# --- Saved scripts (view-only -- never executed from here) -----------------
+# Shared across all 3 users since 2026-10-15, same reasoning as cron_jobs:
+# GET /api/saved-scripts (thread-scoped) still backs the per-chat panel, GET
+# /api/saved-scripts/all backs the Scheduled tab's shared "Saved" list, and
+# delete resolves the real owner across every user's file (saved_scripts.
+# find_saved_owner), so anyone can clean up anyone's saved script from there.
 
 class SaveScriptRequest(BaseModel):
     thread_id: str
@@ -748,6 +753,11 @@ async def get_saved_scripts(thread_id: str, user: str = Depends(current_user)) -
     return saved_scripts.list_saved(user, thread_id)
 
 
+@router.get("/api/saved-scripts/all")
+async def get_all_saved_scripts(user: str = Depends(current_user)) -> list[dict]:
+    return saved_scripts.list_all_saved()
+
+
 @router.post("/api/saved-scripts")
 async def post_saved_script(req: SaveScriptRequest, user: str = Depends(current_user)) -> dict:
     title = req.title or (req.code.strip().splitlines()[0][:60] if req.code.strip() else "Untitled script")
@@ -756,8 +766,10 @@ async def post_saved_script(req: SaveScriptRequest, user: str = Depends(current_
 
 @router.delete("/api/saved-scripts/{saved_id}")
 async def delete_saved_script(saved_id: str, user: str = Depends(current_user)) -> dict:
-    if not saved_scripts.delete_saved(user, saved_id):
+    owner = saved_scripts.find_saved_owner(saved_id)
+    if owner is None:
         raise HTTPException(status_code=404, detail="saved script not found")
+    saved_scripts.delete_saved(owner, saved_id)
     return {"ok": True}
 
 

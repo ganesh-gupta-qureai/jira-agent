@@ -381,22 +381,22 @@ export default function App() {
           <ScheduledJobs onEditInChat={editAutomationInChat} />
         ) : (
           <>
-        {editingJob && (
-          <div className="editing-banner">
-            Editing automation "{editingJob.name}" — clicking Schedule below will update this job instead of
-            creating a new one.
-            <button
-              className="editing-banner__clear"
-              onClick={() => {
-                if (threadId) clearEditingJob(threadId)
-                setEditingJobState(null)
-              }}
-            >
-              Cancel, create new instead
-            </button>
-          </div>
-        )}
         <div className="chat" ref={scrollRef}>
+          {editingJob && (
+            <div className="editing-banner">
+              Editing automation "{editingJob.name}" — clicking Schedule below will update this job instead of
+              creating a new one.
+              <button
+                className="editing-banner__clear"
+                onClick={() => {
+                  if (threadId) clearEditingJob(threadId)
+                  setEditingJobState(null)
+                }}
+              >
+                Cancel, create new instead
+              </button>
+            </div>
+          )}
           {state.items.length === 0 && !state.running && (
             <div className="empty">
               <div className="empty__logo">⬢</div>

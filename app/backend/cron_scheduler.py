@@ -14,6 +14,7 @@ files in cron_jobs.py are the actual durable state.
 from __future__ import annotations
 
 import logging
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -68,14 +69,38 @@ def validate_cron(cron_expr: str) -> str | None:
     return None
 
 
+def validate_timezone(tz: str) -> str | None:
+    """Returns an error string if `tz` isn't a real IANA timezone name, else
+    None -- same purpose as validate_cron, just for the timezone field."""
+    try:
+        ZoneInfo(tz)
+    except ZoneInfoNotFoundError:
+        return f"unknown timezone: {tz!r}"
+    return None
+
+
 def _build_trigger(job: dict) -> CronTrigger:
     """Build the actual trigger from a job's stored fields. Split the
     5-field crontab string into CronTrigger's own minute/hour/day/month/
     day_of_week kwargs (same field syntax, so this is a direct pass-through)
     instead of using from_crontab(), which has no start_date/end_date
-    parameters -- those only exist on the full constructor."""
+    parameters -- those only exist on the full constructor.
+
+    `timezone` (an IANA name, e.g. "America/New_York", default "UTC") is
+    passed straight to CronTrigger, which computes each fire time against
+    that real timezone -- not a fixed offset applied once -- so DST
+    transitions are handled correctly automatically. Added 2026-10-15:
+    previously every job's hour/minute was always interpreted as UTC, with
+    the user expected to hand-convert their own local time first."""
     minute, hour, day, month, day_of_week = job["cron_expr"].split()
-    kwargs: dict = dict(minute=minute, hour=hour, day=day, month=month, day_of_week=day_of_week)
+    kwargs: dict = dict(
+        minute=minute,
+        hour=hour,
+        day=day,
+        month=month,
+        day_of_week=day_of_week,
+        timezone=job.get("timezone") or "UTC",
+    )
     if job.get("start_date"):
         kwargs["start_date"] = job["start_date"]
     if job.get("end_date"):

@@ -29,6 +29,7 @@ export type CronJob = {
   name: string
   code: string
   cron_expr: string
+  timezone: string // IANA name the cron_expr's hour/minute are relative to
   start_date: string | null // ISO date (YYYY-MM-DD)
   end_date: string | null // ISO date (YYYY-MM-DD)
   channel: string | null // Slack channel ID override
@@ -65,6 +66,7 @@ export async function createCronJob(
   name: string,
   code: string,
   cron_expr: string,
+  timezone: string,
   start_date: string | null,
   end_date: string | null,
   channel: string | null,
@@ -78,6 +80,7 @@ export async function createCronJob(
       name,
       code,
       cron_expr,
+      timezone,
       start_date,
       end_date,
       channel,
@@ -103,6 +106,7 @@ export async function updateCronJob(
   id: string,
   name: string,
   cron_expr: string,
+  timezone: string,
   start_date: string | null,
   end_date: string | null,
   channel: string | null,
@@ -116,6 +120,7 @@ export async function updateCronJob(
     body: JSON.stringify({
       name,
       cron_expr,
+      timezone,
       start_date,
       end_date,
       channel,
@@ -145,8 +150,17 @@ export async function unarchiveCronJob(id: string): Promise<CronJob> {
   return res.json()
 }
 
-export async function executeCronJob(id: string): Promise<ExecuteResult> {
-  const res = await fetch(apiUrl(`/api/cron-jobs/${id}/execute`), { method: 'POST' })
+export async function executeCronJob(
+  id: string,
+  channel: string | null,
+  send: boolean,
+  confirmedProduction: boolean,
+): Promise<ExecuteResult> {
+  const res = await fetch(apiUrl(`/api/cron-jobs/${id}/execute`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel, send, confirmed_production: confirmedProduction }),
+  })
   await throwIfBad(res)
   return res.json()
 }

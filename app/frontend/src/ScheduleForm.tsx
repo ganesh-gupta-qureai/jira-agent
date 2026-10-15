@@ -24,6 +24,26 @@ const FREQUENCIES: { value: Frequency; label: string }[] = [
   { value: 'monthly', label: 'Monthly' },
 ]
 
+// IANA names, not fixed offsets -- passed straight through to the backend's
+// CronTrigger(timezone=...), which computes each fire time against the real
+// calendar for that zone, so daylight saving transitions are handled
+// automatically (no manual UTC conversion needed, unlike the old UTC-only
+// picker this replaced on 2026-10-15).
+const TIMEZONES: { value: string; label: string }[] = [
+  { value: 'UTC', label: 'UTC' },
+  { value: 'Asia/Kolkata', label: 'IST — India' },
+  { value: 'America/New_York', label: 'ET — US Eastern' },
+  { value: 'America/Chicago', label: 'CT — US Central' },
+  { value: 'America/Denver', label: 'MT — US Mountain' },
+  { value: 'America/Los_Angeles', label: 'PT — US Pacific' },
+  { value: 'Europe/London', label: 'GMT/BST — London' },
+  { value: 'Europe/Berlin', label: 'CET — Central Europe' },
+  { value: 'Asia/Dubai', label: 'GST — Dubai' },
+  { value: 'Asia/Singapore', label: 'SGT — Singapore' },
+  { value: 'Asia/Shanghai', label: 'CST — China' },
+  { value: 'Australia/Sydney', label: 'AET — Sydney' },
+]
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -106,6 +126,7 @@ function summarize(
 export type ScheduleValues = {
   name: string
   cronExpr: string
+  timezone: string
   startDate: string | null
   endDate: string | null
 }
@@ -115,6 +136,7 @@ export type ScheduleValues = {
 export type ScheduleFormInitial = {
   name: string
   cronExpr: string
+  timezone: string
   startDate: string | null
   endDate: string | null
 }
@@ -139,6 +161,7 @@ export function ScheduleForm({
   const parsedInitial = useMemo(() => (initial ? parseCronExpr(initial.cronExpr) : null), [initial])
 
   const [name, setName] = useState(initial?.name ?? '')
+  const [timezone, setTimezone] = useState(initial?.timezone ?? 'UTC')
   const [freq, setFreq] = useState<Frequency>(parsedInitial?.freq ?? 'weekly')
   const [time, setTime] = useState(parsedInitial?.time ?? '09:00')
   const [weekdays, setWeekdays] = useState<number[]>(parsedInitial?.weekdays ?? [1]) // Monday
@@ -170,6 +193,7 @@ export function ScheduleForm({
     onSubmit({
       name: name.trim(),
       cronExpr,
+      timezone,
       startDate: useStart && startDate ? startDate : null,
       endDate: useEnd && endDate ? endDate : null,
     })
@@ -255,22 +279,33 @@ export function ScheduleForm({
       {freq !== 'minutes' && (
         <>
           <div className="sched-form__row">
-            <span className="sched-form__label">Time (UTC)</span>
+            <span className="sched-form__label">Time</span>
             <input
               type="time"
               className="sched-form__input sched-form__input--time"
               value={time}
               onChange={(e) => setTime(e.target.value || '09:00')}
             />
+            <select
+              className="sched-form__select"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
+                </option>
+              ))}
+            </select>
           </div>
-          {/* The backend scheduler (APScheduler) runs on the container's system
-              clock, which is UTC -- confirmed live 2026-10-14. buildCronExpr
-              below passes this value straight through with no conversion, so a
-              user entering their own local time (e.g. 9am IST) here would
-              silently schedule it for 9am UTC instead, 5.5 hours off. Root-caused
-              after nearly shipping exactly that mistake for Automation 4. */}
+          {/* The backend passes the chosen IANA timezone straight to
+              APScheduler's CronTrigger (added 2026-10-15), which computes
+              each fire time against that zone's real calendar -- so this
+              time is wall-clock in the zone selected above, and daylight
+              saving shifts (e.g. ET's EST/EDT switch) are handled
+              automatically, not baked in as a fixed offset at creation time. */}
           <div className="sched-form__hint">
-            Enter the time in UTC, not your local time — e.g. 9:00 AM IST is 03:30 UTC.
+            Time is in the zone selected above — no manual UTC conversion needed.
           </div>
         </>
       )}
@@ -307,6 +342,7 @@ export function ScheduleForm({
 
       <div className="sched-form__preview">
         {summary}
+        {freq !== 'minutes' ? ` (${TIMEZONES.find((tz) => tz.value === timezone)?.label ?? timezone})` : ''}
         {useStart && startDate ? ` — starting ${startDate}` : ''}
         {useEnd && endDate ? ` — through ${endDate}` : ''}
       </div>

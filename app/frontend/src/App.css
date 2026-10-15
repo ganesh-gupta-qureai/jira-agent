@@ -1113,6 +1113,17 @@ a.sidebar__back .back-arrow {
 .sched__run-error { flex-basis: 100%; color: #ef4444; font-size: 11px; }
 .sched__run-empty { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
 .editing-banner {
+  /* Sticky to .chat's own scroll container, NOT a sibling grid child of
+     .main -- .main is a 4-row grid (48px topbar / 1fr chat / auto composer /
+     28px statusbar) sized for exactly those 4 children. An earlier version
+     rendered this banner as a 5th child before .chat, which pushed every
+     row after it into an implicit extra row and shoved the composer off the
+     bottom of the viewport (root-caused 2026-10-15: "chat box shifting
+     downwards and getting stuck"). Living inside .chat as its first flex
+     child keeps the grid's row count correct. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1120,7 +1131,8 @@ a.sidebar__back .back-arrow {
   font-size: 12px;
   color: var(--text-secondary);
   background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
   padding: 8px 16px;
 }
 .editing-banner__clear {

@@ -86,9 +86,21 @@ function JobRow({
   const [open, setOpen] = useState(false)
   const [rescheduling, setRescheduling] = useState(false)
   const [reschedError, setReschedError] = useState<string | null>(null)
+  // The job's own permanent channel/send -- only edited via Re-schedule,
+  // re-seeded from the job each time that form opens so it can't go stale.
+  const [channel, setChannel] = useState<string>(job.channel ?? SLACK_CHANNELS[0].id)
+  const [send, setSend] = useState(job.send)
   const [busy, setBusy] = useState(false)
   const [execBusy, setExecBusy] = useState(false)
   const [execResult, setExecResult] = useState<ExecuteResult | null>(null)
+  // Execute's own fresh channel/send for just this one run -- always starts
+  // at the safe test default, same as the chat composer, independent of
+  // whatever the job's own permanent channel/send are set to. Root-caused
+  // 2026-10-15: an earlier version reused the job's own (already-production)
+  // channel/send here with no override and no confirmation, and a test click
+  // on the already-promoted Automation 4 posted for real to #us-operations.
+  const [execChannel, setExecChannel] = useState<string>(SLACK_CHANNELS[0].id)
+  const [execSend, setExecSend] = useState(false)
   const status = lastRunLabel(job)
 
   async function toggleEnabled(e: React.MouseEvent) {
@@ -157,11 +169,24 @@ function JobRow({
   async function handleExecute(e: React.MouseEvent) {
     e.stopPropagation()
     if (execBusy) return
+    let confirmedProduction = false
+    if (execSend && execChannel === PRODUCTION_SLACK_CHANNEL_ID) {
+      if (
+        !window.confirm(
+          `This will send a REAL message to #us-operations (production) right now, not a test channel. Continue?`,
+        )
+      )
+        return
+      confirmedProduction = true
+    }
     setExecBusy(true)
     setExecResult(null)
     try {
-      const result = await executeCronJob(job.id)
+      const result = await executeCronJob(job.id, execChannel, execSend, confirmedProduction)
       setExecResult(result)
+      // Run history changed server-side -- refetch so it shows up without a
+      // stale optimistic overwrite (passing null skips that, only invalidates).
+      onChanged(null, job.id)
     } catch (err) {
       setExecResult({
         ok: false,
@@ -177,39 +202,14 @@ function JobRow({
     }
   }
 
-  async function quickField(patch: Partial<Pick<CronJob, 'channel' | 'send'>>) {
-    if (busy) return
-    const nextChannel = patch.channel ?? job.channel
-    const nextSend = patch.send ?? job.send
-    if (nextSend && nextChannel === PRODUCTION_SLACK_CHANNEL_ID && !(job.send && job.channel === PRODUCTION_SLACK_CHANNEL_ID)) {
-      if (
-        !window.confirm(
-          'This will send REAL messages to #us-operations (production) every time it runs, not a test channel. Continue?',
-        )
-      )
-        return
-    }
-    setBusy(true)
-    try {
-      const updated = await updateCronJob(
-        job.id,
-        job.name,
-        job.cron_expr,
-        job.start_date,
-        job.end_date,
-        nextChannel,
-        nextSend,
-        true, // already confirmed just above when moving to production
-      )
-      onChanged(updated, job.id)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function submitReschedule(values: ScheduleValues) {
+    let confirmedProduction = true
+    if (send && channel === PRODUCTION_SLACK_CHANNEL_ID && !(job.send && job.channel === PRODUCTION_SLACK_CHANNEL_ID)) {
+      confirmedProduction = window.confirm(
+        'This will send REAL messages to #us-operations (production) every time it runs, not a test channel. Continue?',
+      )
+      if (!confirmedProduction) return
+    }
     setBusy(true)
     setReschedError(null)
     try {
@@ -217,11 +217,12 @@ function JobRow({
         job.id,
         values.name,
         values.cronExpr,
+        values.timezone,
         values.startDate,
         values.endDate,
-        job.channel,
-        job.send,
-        true, // channel/send unchanged here, already-confirmed values
+        channel,
+        send,
+        confirmedProduction,
       )
       onChanged(updated, job.id)
       setRescheduling(false)
@@ -250,39 +251,13 @@ function JobRow({
       {open && !rescheduling && (
         <div className="history__body">
           <div className="history__label">cron expression</div>
-          <pre className="md-pre">{job.cron_expr}</pre>
+          <pre className="md-pre">
+            {job.cron_expr} ({job.timezone})
+          </pre>
           <div className="history__label">channel</div>
-          {archivedView ? (
-            <pre className="md-pre">{channelLabel(job.channel)}</pre>
-          ) : (
-            <select
-              className="sched-form__select"
-              value={job.channel ?? SLACK_CHANNELS[0].id}
-              onChange={(e) => quickField({ channel: e.target.value })}
-              onClick={(e) => e.stopPropagation()}
-              disabled={busy}
-            >
-              {SLACK_CHANNELS.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          )}
+          <pre className="md-pre">{channelLabel(job.channel)}</pre>
           <div className="history__label">send mode</div>
-          {archivedView ? (
-            <pre className="md-pre">{job.send ? 'Actually sends to Slack' : 'Preview only (never posts)'}</pre>
-          ) : (
-            <label className="sched-form__checkbox" onClick={(e) => e.stopPropagation()}>
-              <input
-                type="checkbox"
-                checked={job.send}
-                onChange={(e) => quickField({ send: e.target.checked })}
-                disabled={busy}
-              />
-              Actually sends to Slack
-            </label>
-          )}
+          <pre className="md-pre">{job.send ? 'Actually sends to Slack' : 'Preview only (never posts)'}</pre>
           {(job.start_date || job.end_date) && (
             <>
               <div className="history__label">date range</div>
@@ -322,15 +297,14 @@ function JobRow({
                   className="btn btn--ghost"
                   onClick={(e) => {
                     e.stopPropagation()
+                    setChannel(job.channel ?? SLACK_CHANNELS[0].id)
+                    setSend(job.send)
                     setRescheduling(true)
                   }}
                   disabled={busy}
-                  title="Rename, and change the interval/dates with date & time pickers"
+                  title="Rename, and change the interval/timezone/dates/channel with pickers"
                 >
                   Re-schedule
-                </button>
-                <button className="btn btn--ghost" onClick={handleExecute} disabled={execBusy}>
-                  {execBusy ? 'Running…' : 'Execute'}
                 </button>
                 <button
                   className="btn btn--ghost"
@@ -351,6 +325,34 @@ function JobRow({
                 <button className="btn btn--ghost history__delete" onClick={handleArchive} disabled={busy}>
                   Archive
                 </button>
+                {/* Execute's own channel/send + the button itself, grouped together
+                    at the end like every other code block's action row (chat's
+                    Markdown.tsx CodeBlock) -- always defaults to the test channel,
+                    send off, independent of the job's own permanent settings above. */}
+                <select
+                  className="sched-form__select"
+                  value={execChannel}
+                  onChange={(e) => setExecChannel(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  title="Channel this one-off Execute run will use"
+                >
+                  {SLACK_CHANNELS.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+                <label className="sched-form__checkbox" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={execSend}
+                    onChange={(e) => setExecSend(e.target.checked)}
+                  />
+                  Actually send
+                </label>
+                <button className="btn btn--ghost" onClick={handleExecute} disabled={execBusy}>
+                  {execBusy ? 'Running…' : 'Execute'}
+                </button>
               </>
             )}
           </div>
@@ -358,10 +360,27 @@ function JobRow({
       )}
       {open && rescheduling && (
         <div className="history__body">
+          <div className="sched-form__row">
+            <span className="sched-form__label">Channel</span>
+            <select className="sched-form__select" value={channel} onChange={(e) => setChannel(e.target.value)}>
+              {SLACK_CHANNELS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="sched-form__row">
+            <label className="sched-form__checkbox">
+              <input type="checkbox" checked={send} onChange={(e) => setSend(e.target.checked)} />
+              Actually sends to Slack (its real, recurring runs)
+            </label>
+          </div>
           <ScheduleForm
             initial={{
               name: job.name,
               cronExpr: job.cron_expr,
+              timezone: job.timezone,
               startDate: job.start_date,
               endDate: job.end_date,
             }}

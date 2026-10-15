@@ -165,6 +165,7 @@ class CreateCronJobRequest(BaseModel):
     name: str
     code: str
     cron_expr: str
+    timezone: str = "UTC"           # IANA name the hour/minute fields above are relative to
     start_date: str | None = None  # ISO date (YYYY-MM-DD); None = start immediately
     end_date: str | None = None    # ISO date (YYYY-MM-DD); None = no end
     channel: str | None = None     # Slack channel ID override; None = CHU_SLACK_CHANNEL_ID default
@@ -190,11 +191,21 @@ class UpdateCronJobRequest(BaseModel):
     # once the user is happy with a revised script and clicks Schedule.
     name: str
     cron_expr: str
+    timezone: str = "UTC"
     start_date: str | None = None
     end_date: str | None = None
     channel: str | None = None
     send: bool = False
     code: str | None = None
+    confirmed_production: bool = False
+
+
+class ExecuteCronJobRequest(BaseModel):
+    # Fresh, one-off channel/send for this single test run -- see
+    # execute_cron_job_route's docstring. Defaults mirror the chat composer's
+    # own Execute defaults (no channel picked, send off == safe preview).
+    channel: str | None = None
+    send: bool = False
     confirmed_production: bool = False
 
 
@@ -388,10 +399,21 @@ async def create_cron_job_route(req: CreateCronJobRequest, user: str = Depends(c
     error = cron_scheduler.validate_cron(req.cron_expr)
     if error:
         raise HTTPException(status_code=400, detail=f"invalid cron expression: {error}")
+    tz_error = cron_scheduler.validate_timezone(req.timezone)
+    if tz_error:
+        raise HTTPException(status_code=400, detail=tz_error)
     if req.start_date and req.end_date and req.end_date < req.start_date:
         raise HTTPException(status_code=400, detail="end date can't be before start date")
     job = cron_jobs.create_job(
-        user, req.name.strip(), req.code, req.cron_expr.strip(), req.start_date, req.end_date, req.channel, req.send
+        user,
+        req.name.strip(),
+        req.code,
+        req.cron_expr.strip(),
+        req.start_date,
+        req.end_date,
+        req.channel,
+        req.send,
+        req.timezone,
     )
     cron_scheduler.schedule_job(user, job)
     return job
@@ -460,18 +482,28 @@ async def unarchive_cron_job_route(job_id: str, user: str = Depends(current_user
 
 
 @router.post("/api/cron-jobs/{job_id}/execute")
-async def execute_cron_job_route(job_id: str, user: str = Depends(current_user)) -> dict:
-    """Run a scheduled job's own stored code/channel/send right now, same as
-    the Scheduled tab's Execute button -- a one-off test/re-run outside its
-    cron timing. Uses the job's already-confirmed channel/send as-is (those
-    were explicitly confirmed when the job was created/promoted/edited), and
-    is logged into that job's own run history (manual=True) alongside its
-    real cron-triggered runs."""
+async def execute_cron_job_route(
+    job_id: str, req: ExecuteCronJobRequest, user: str = Depends(current_user)
+) -> dict:
+    """Run a scheduled job's code right now, same shape as the chat's own
+    Execute button -- a one-off test/re-run outside its cron timing, logged
+    into the job's own run history (manual=True). `channel`/`send` are
+    chosen fresh for THIS run, same as the chat composer, independent of the
+    job's own permanent channel/send (those only govern its real
+    cron-triggered runs and are edited via Re-schedule). Root-caused
+    2026-10-15: an earlier version silently reused the job's own
+    already-production channel/send with zero confirmation, and a test click
+    on the already-promoted Automation 4 posted for real to #us-operations."""
+    if req.send and req.channel == PRODUCTION_SLACK_CHANNEL_ID and not req.confirmed_production:
+        raise HTTPException(
+            status_code=400,
+            detail="Sending to the production channel requires explicit confirmation.",
+        )
     owner = cron_jobs.find_owner(job_id)
     if owner is None:
         raise HTTPException(status_code=404, detail="job not found")
     job = cron_jobs.get_job(owner, job_id)
-    result = await execute_script(owner, job["code"], job.get("channel"), job.get("send", False))
+    result = await execute_script(owner, job["code"], req.channel, req.send)
     error = None
     if not result.get("ok"):
         error = (result.get("stderr") or "").strip() or None
@@ -508,6 +540,9 @@ async def update_cron_job_route(
     error = cron_scheduler.validate_cron(req.cron_expr)
     if error:
         raise HTTPException(status_code=400, detail=f"invalid cron expression: {error}")
+    tz_error = cron_scheduler.validate_timezone(req.timezone)
+    if tz_error:
+        raise HTTPException(status_code=400, detail=tz_error)
     if req.start_date and req.end_date and req.end_date < req.start_date:
         raise HTTPException(status_code=400, detail="end date can't be before start date")
     owner = cron_jobs.find_owner(job_id)
@@ -516,6 +551,7 @@ async def update_cron_job_route(
     fields = {
         "name": req.name.strip(),
         "cron_expr": req.cron_expr.strip(),
+        "timezone": req.timezone,
         "start_date": req.start_date,
         "end_date": req.end_date,
         "channel": req.channel,

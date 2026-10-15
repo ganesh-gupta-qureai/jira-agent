@@ -55,6 +55,9 @@ def _read_all(user_id: str) -> list[dict]:
         if "archived" not in j:
             j["archived"] = False  # self-heal jobs created before archiving existed
             changed = True
+        if not j.get("timezone"):
+            j["timezone"] = "UTC"  # self-heal jobs created before per-job timezones existed
+            changed = True
     if changed:
         _write_all(user_id, jobs)
     return jobs
@@ -85,6 +88,7 @@ def create_job(
     end_date: str | None = None,
     channel: str | None = None,
     send: bool = False,
+    timezone: str = "UTC",
 ) -> dict:
     job = {
         "id": uuid.uuid4().hex,
@@ -92,6 +96,7 @@ def create_job(
         "name": name,
         "code": code,
         "cron_expr": cron_expr,
+        "timezone": timezone or "UTC",  # IANA name -- cron_scheduler._build_trigger's CronTrigger uses this directly
         "start_date": start_date,  # ISO date (YYYY-MM-DD) or None -- runs start firing immediately
         "end_date": end_date,      # ISO date (YYYY-MM-DD) or None -- runs indefinitely
         "channel": channel or DEFAULT_TEST_CHANNEL,  # never null -- see DEFAULT_TEST_CHANNEL's comment
@@ -185,7 +190,7 @@ def set_enabled(user_id: str, job_id: str, enabled: bool) -> dict | None:
 # when that flow explicitly sent a revised script; the plain "Edit schedule"
 # metadata form never sends it, so a job's code can't be silently swapped by
 # an unrelated edit.
-_EDITABLE_FIELDS = {"name", "cron_expr", "start_date", "end_date", "channel", "send", "code"}
+_EDITABLE_FIELDS = {"name", "cron_expr", "timezone", "start_date", "end_date", "channel", "send", "code"}
 
 
 def update_job(user_id: str, job_id: str, fields: dict) -> dict | None:
@@ -201,6 +206,8 @@ def update_job(user_id: str, job_id: str, fields: dict) -> dict | None:
                     j[key] = value
             if not j.get("channel"):
                 j["channel"] = DEFAULT_TEST_CHANNEL
+            if not j.get("timezone"):
+                j["timezone"] = "UTC"
             _write_all(user_id, jobs)
             return j
     return None

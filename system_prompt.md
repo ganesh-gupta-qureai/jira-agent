@@ -368,9 +368,7 @@ JQL, and only act on tickets not already acted on. Concretely:
    interval (e.g. `-15m` on a 10-minute schedule, not `-10m` exactly) so a
    slow Jira index or a missed poll never silently drops an event — dedup
    via `_event_state` is what prevents double-notifying, not a tight window.
-4. Nothing new this poll → print nothing and exit 0 quietly; don't post an
-   empty "no events" message.
-5. This still uses the exact same Schedule button as Mode 3 — there is no
+4. This still uses the exact same Schedule button as Mode 3 — there is no
    separate "event" scheduling mechanism. Recommend the Minutes interval
    (every 5–15 minutes, matching how time-sensitive the event is) instead of
    a daily/weekly slot, since the event is only detected at poll time.

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { apiUrl, bounceIfUnauthorized } from './api'
 import { createCronJob, updateCronJob } from './cronJobsApi'
 import { clearEditingJob, getEditingJob } from './editingJob'
@@ -241,6 +242,7 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<ExecuteResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
   // Save-for-later -- explicitly NOT a way to run this script, just keeps a
   // copy pinned to this chat's SavedScriptsPanel (top-right of the topbar).
@@ -251,6 +253,16 @@ function CodeBlock({ lang, code, threadId }: { lang: string; code: string; threa
     try {
       await saveScript(threadId, code, deriveScriptTitle(code))
       setSaveStatus('saved')
+      // Root-caused live 2026-10-16: this save reached the backend fine, but
+      // nothing told the Scheduled tab's shared "Saved" list (ScheduledJobs.tsx,
+      // queryKey ['saved-scripts-all']) its cache was now stale -- with
+      // staleTime: 30_000 and refetchOnWindowFocus off (main.tsx), switching
+      // to that tab right after saving kept showing the old (often empty)
+      // list until the cache happened to expire on its own. Invalidate both
+      // this chat's own panel query and the shared one, same as
+      // ScheduledJobs.tsx already does after Schedule-from-Saved.
+      queryClient.invalidateQueries({ queryKey: ['saved-scripts', threadId] })
+      queryClient.invalidateQueries({ queryKey: ['saved-scripts-all'] })
     } catch {
       setSaveStatus('idle')
     }
